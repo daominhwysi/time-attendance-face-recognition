@@ -486,7 +486,7 @@ async def search_faces(
             query_filter=user_filter,
             limit=5
         )
-
+        hits = hits.points
         return [
             SearchResult(id=hit.id, score=hit.score, **hit.payload) for hit in hits
         ]
