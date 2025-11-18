@@ -1,0 +1,15 @@
+onnxruntime
+opencv_python_headless
+qdrant-client
+fastapi
+uvicorn[standard]
+sqlalchemy
+passlib[bcrypt]
+python-jose
+opencv-stubs
+python-multipart
+aioboto3
+python-dotenv
+pillow
+scikit-image
+SQLAlchemy
