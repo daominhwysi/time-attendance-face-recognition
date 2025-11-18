@@ -480,9 +480,9 @@ async def search_faces(
             ]
         )
 
-        hits = qdrant_client.search(
+        hits = qdrant_client.query_points(
             collection_name=IMAGE_COLLECTION_NAME,
-            query_vector=embedding_vector.tolist(),
+            query=embedding_vector.tolist(),
             query_filter=user_filter,
             limit=5
         )

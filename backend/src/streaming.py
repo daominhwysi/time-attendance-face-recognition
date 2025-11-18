@@ -83,16 +83,16 @@ async def recognition_task(
                                     )
                                 ]
                             )
-                            hits = qdrant_client.search(
+                            hits = qdrant_client.query_points(
                                 collection_name=IMAGE_COLLECTION_NAME,
-                                query_vector=embedding[0].tolist(),
+                                query=embedding[0].tolist(),
                                 query_filter=user_filter,
                                 limit=1,
                                 score_threshold=0.4,
                             )
                             box = list(map(int, face["bbox"]))
-                            if hits:
-                                best_match = hits[0]
+                            if hits.points:
+                                best_match = hits.points[0]
                                 label = best_match.payload["name"]
                                 results_to_send.append(
                                     {
