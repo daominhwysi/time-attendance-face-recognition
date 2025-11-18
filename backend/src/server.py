@@ -41,6 +41,10 @@ app.include_router(faces.router)
 app.include_router(streaming.router)
 app.include_router(reports.router)
 
+@app.get("/hello")
+def read_root():
+    return {"Hello": "World"}
+
 @app.post("/register", response_model=UserOut)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.username == user.username).first()
