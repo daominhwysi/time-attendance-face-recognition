@@ -1,3 +1,4 @@
+import os
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -20,7 +21,8 @@ from .qdrant_client import setup_qdrant
 from .schemas import UserCreate, UserOut
 
 # --- End of updated imports ---
-
+from dotenv import load_dotenv
+load_dotenv()
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -29,14 +31,19 @@ app = FastAPI()
 def on_startup():
     setup_qdrant()
 
+cors_origins = os.getenv("CORS_URL")
+if cors_origins:
+    allow_origins = cors_origins.split(",")
+else:
+    allow_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 app.include_router(faces.router)
 app.include_router(streaming.router)
 app.include_router(reports.router)
