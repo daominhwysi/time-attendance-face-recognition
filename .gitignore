@@ -2,3 +2,5 @@ backend/.env
 /backend/lib/uniface/detection/__pycache__
 /backend/venv
 /backend/misc
+/backend/users.db
+/backend/local_vector
