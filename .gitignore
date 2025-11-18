@@ -4,3 +4,4 @@ backend/.env
 /backend/misc
 /backend/users.db
 /backend/local_vector
+vite/.env

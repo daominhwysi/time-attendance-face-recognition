@@ -56,9 +56,9 @@ function StreamPage() {
     }
 
     setupCamera()
-
+    const SOCKET_API_URL = import.meta.env.SOCKET_API_URL
     // 2. Setup WebSocket connection
-    const ws = new WebSocket('ws://localhost:8000/stream/ws')
+    const ws = new WebSocket(`${SOCKET_API_URL}/stream/ws`)
     wsRef.current = ws
 
     ws.onopen = () => {
