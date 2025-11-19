@@ -33,7 +33,7 @@ export default function DashboardLayout() {
           <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
             <Cctv className="h-5 w-5" />
           </div>
-          FaceFinder
+          Time Attendance FR
         </div>
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="grid gap-1 px-2">
