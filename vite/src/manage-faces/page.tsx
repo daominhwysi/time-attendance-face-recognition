@@ -3,7 +3,7 @@ import { Upload, Search as SearchIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import * as facesApi from '@/api/faceApi'
 import type { FaceRecord } from '@/api/faceApi'
-
+import { toast } from 'sonner'
 // Import the new hook and components
 import { useFaceData } from './hooks/useFaceData'
 import { FaceGrid } from './components/FaceGrid'
@@ -38,32 +38,40 @@ function ManageFacesPage() {
 
   // Handler functions remain here to connect UI events to API calls and data refreshing
   const handleDelete = async (pointId: string) => {
-    if (
-      window.confirm('Are you sure you want to delete this specific image?')
-    ) {
-      try {
-        await facesApi.deleteFace(pointId)
-        refresh()
-      } catch (err) {
-        alert('Failed to delete image.')
-      }
-    }
+    // Use a toast with action instead of window.confirm for better UX
+    toast("Delete image?", {
+        description: "This action cannot be undone.",
+        action: {
+            label: "Delete",
+            onClick: async () => {
+                 try {
+                    await facesApi.deleteFace(pointId)
+                    toast.success("Image deleted")
+                    refresh()
+                  } catch (err) {
+                    toast.error("Failed to delete image")
+                  }
+            }
+        }
+    })
   }
 
   const handleDeletePerson = async (label: string, ids: string[]) => {
-    if (
-      window.confirm(
-        `Are you sure you want to delete ALL images for "${label}"?`
-      )
-    ) {
-      try {
-        await Promise.all(ids.map((id) => facesApi.deleteFace(id)))
-        alert(`Successfully deleted person: ${label}`)
-        refresh()
-      } catch (err) {
-        alert(`Failed to delete person: ${label}.`)
-      }
-    }
+    toast(`Delete all images for ${label}?`, {
+        description: `This will remove ${ids.length} images.`,
+        action: {
+            label: "Confirm Delete",
+            onClick: async () => {
+                try {
+                    await Promise.all(ids.map((id) => facesApi.deleteFace(id)))
+                    toast.success(`Deleted person: ${label}`)
+                    refresh()
+                } catch (err) {
+                    toast.error(`Failed to delete ${label}`)
+                }
+            }
+        }
+    })
   }
 
   const handleUpdateName = async (pointId: string, oldName: string) => {
@@ -71,35 +79,39 @@ function ManageFacesPage() {
     if (newName && newName.trim() && newName.trim() !== oldName) {
       try {
         await facesApi.renameFaceGroup(pointId, newName.trim())
+        toast.success("Group renamed successfully")
         refresh()
       } catch (err) {
-        alert('Failed to update name.')
+        toast.error("Failed to rename group")
       }
     }
   }
+
+  const handleAddImageFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file && labelToAddImageTo) {
+      const loadingToast = toast.loading("Uploading image...")
+      try {
+        await facesApi.uploadFaces([file], [labelToAddImageTo])
+        toast.success("Image added successfully")
+        refresh()
+      } catch (error) {
+        toast.error("Failed to add image")
+      } finally {
+        toast.dismiss(loadingToast)
+        setLabelToAddImageTo(null)
+        if (addImageInputRef.current) addImageInputRef.current.value = ''
+      }
+    }
+  }
+
+
 
   const triggerAddImage = (label: string) => {
     setLabelToAddImageTo(label)
     addImageInputRef.current?.click()
   }
 
-  const handleAddImageFile = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0]
-    if (file && labelToAddImageTo) {
-      try {
-        await facesApi.uploadFaces([file], [labelToAddImageTo])
-        alert(`Successfully added image to label "${labelToAddImageTo}"`)
-        refresh()
-      } catch (error) {
-        alert('Failed to add image.')
-      } finally {
-        setLabelToAddImageTo(null)
-        if (addImageInputRef.current) addImageInputRef.current.value = ''
-      }
-    }
-  }
 
   const triggerReplaceImage = (pointId: string) => {
     setPointIdToReplace(pointId)

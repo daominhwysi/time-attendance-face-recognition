@@ -35,7 +35,7 @@ cors_origins = os.getenv("CORS_URL")
 if cors_origins:
     allow_origins = cors_origins.split(",")
 else:
-    allow_origins = ["*"]
+    allow_origins = ["http://localhost:5173"]
 
 app.add_middleware(
     CORSMiddleware,

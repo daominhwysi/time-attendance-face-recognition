@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-
+import { Badge } from '@/components/ui/badge'
 const VIDEO_WIDTH = 640
 const VIDEO_HEIGHT = 640
 const FRAME_SEND_INTERVAL = 100
@@ -300,36 +300,48 @@ function StreamPage() {
     })
   }
 
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
-      <h1 className="mb-2 text-3xl font-bold">Live Face Recognition</h1>
-      <p className="mb-4">{status}</p>
-      {/* THÊM VÀO: Hiển thị thời gian phát hiện chuyển động cuối cùng */}
-      <div className="mb-4 text-sm text-gray-600">
-        Last Motion Detected:{' '}
-        {lastDetectionTime
-          ? new Date(lastDetectionTime).toLocaleString()
-          : 'Waiting for motion...'}
+return (
+    <div className="flex flex-col h-[calc(100vh-4rem)]">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+            <h1 className="text-2xl font-bold tracking-tight">Live Monitor</h1>
+            <p className="text-muted-foreground flex items-center gap-2">
+                Status:
+                <Badge variant={wsRef.current?.readyState === 1 ? "default" : "destructive"}>
+                    {status}
+                </Badge>
+            </p>
+        </div>
+        <div className="text-sm font-mono bg-muted px-3 py-1 rounded-md">
+            Last Activity: {lastDetectionTime ? new Date(lastDetectionTime).toLocaleTimeString() : '--:--:--'}
+        </div>
       </div>
-      <div className="w-max-content relative rounded-lg border-4 border-gray-300">
-        <video
-          ref={videoRef}
-          width={VIDEO_WIDTH}
-          height={VIDEO_HEIGHT}
-          className="rounded-md"
-        />
-        <canvas
-          ref={canvasRef}
-          width={VIDEO_WIDTH}
-          height={VIDEO_HEIGHT}
-          className="absolute top-0 left-0"
-        />
+
+      <div className="flex-1 flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl relative">
+         {/* The Video Container */}
+         <div className="relative w-full max-w-[800px] aspect-square md:aspect-video bg-gray-900">
+            <video
+              ref={videoRef}
+              width={VIDEO_WIDTH}
+              height={VIDEO_HEIGHT}
+              className="w-full h-full object-contain"
+              playsInline
+              muted
+            />
+            <canvas
+              ref={canvasRef}
+              width={VIDEO_WIDTH}
+              height={VIDEO_HEIGHT}
+              className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
+            />
+
+            {/* Overlay UI elements */}
+            <div className="absolute top-4 right-4 flex gap-2">
+                <div className="animate-pulse h-3 w-3 bg-red-600 rounded-full"></div>
+                <span className="text-xs text-white font-mono bg-black/50 px-2 rounded">LIVE</span>
+            </div>
+         </div>
       </div>
-      <Link to="/" className="mt-4">
-        <button className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
-          Back to Home
-        </button>
-      </Link>
     </div>
   )
 }
