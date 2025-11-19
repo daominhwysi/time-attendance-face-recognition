@@ -30,9 +30,6 @@ export default function DashboardLayout() {
       {/* Sidebar - Desktop */}
       <aside className="hidden w-64 flex-col border-r bg-background md:flex">
         <div className="flex h-16 items-center gap-2 border-b px-6 font-bold text-xl tracking-tight">
-          <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
-            <Cctv className="h-5 w-5" />
-          </div>
           Time Attendance FR
         </div>
         <div className="flex-1 overflow-y-auto py-4">
