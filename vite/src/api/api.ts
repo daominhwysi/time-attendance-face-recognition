@@ -2,10 +2,7 @@ import axios, { AxiosError } from 'axios'
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_BASE_API_URL,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  withCredentials: true
 })
 
 export interface UserCreate {

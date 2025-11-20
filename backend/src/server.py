@@ -8,28 +8,30 @@ from src import faces, reports, streaming
 from . import models
 from .auth import (
     create_access_token,
-    create_refresh_token,  # Import refresh token creator
+    create_refresh_token,
     get_current_active_user,
     hash_password,
     verify_password,
-    verify_token,  # Import token verifier
+    verify_token,
 )
 
 # --- Imports have been updated ---
 from .database import engine, get_db
 from .qdrant_client import setup_qdrant
 from .schemas import UserCreate, UserOut
+from contextlib import asynccontextmanager
 
 # --- End of updated imports ---
 from dotenv import load_dotenv
 load_dotenv()
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
-
-@app.on_event("startup")
-def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     setup_qdrant()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 cors_origins = os.getenv("CORS_URL")
 if cors_origins:
@@ -80,13 +82,13 @@ def login(user: UserCreate, response: Response, db: Session = Depends(get_db)):
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
+        samesite='none',
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        samesite="lax",
+        samesite='none',
     )
     return {"msg": "Login successful"}
 

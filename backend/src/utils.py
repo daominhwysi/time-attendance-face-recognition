@@ -25,7 +25,7 @@ if not all([ENDPOINT_URL_R2, AWS_ACCESS_KEY_ID_R2, AWS_SECRET_ACCESS_KEY_R2, PUB
 
 # Parse bucket and endpoint
 parsed = urlparse(ENDPOINT_URL_R2)
-bucket_name = parsed.path.lstrip("/")  # remove leading slash
+bucket_name = parsed.path.lstrip("/")
 endpoint_base = f"{parsed.scheme}://{parsed.netloc}"
 
 # FNV-1a hash (simple 32-bit)

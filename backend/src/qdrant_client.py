@@ -17,7 +17,7 @@ def get_qdrant_client() -> QdrantClient:
     """
     print("Initializing Qdrant client...")
     os.makedirs("./local_vector", exist_ok=True)
-    client = QdrantClient(path="./local_vector")
+    client = QdrantClient(path="./local_vector_db")
     return client
 
 def setup_qdrant():

@@ -5,3 +5,8 @@ backend/.env
 /backend/users.db
 /backend/local_vector
 vite/.env
+/backend/src/__pycache__
+/backend/src/__pycache__
+/backend/src/__pycache__
+/backend/lib/uniface/__pycache__
+/backend/lib/uniface/__pycache__
