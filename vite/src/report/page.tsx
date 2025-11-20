@@ -120,9 +120,9 @@ export function ReportPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl p-4 sm:p-6">
-      <h1 className="mb-4 text-2xl font-bold">Sightings Report</h1>
-      <div className="mb-4 flex flex-col gap-4 rounded-md border p-4 sm:flex-row sm:items-end">
-        <div className="grid flex-1 gap-1.5">
+      <h1 className="mb-2 text-2xl font-bold">Report</h1>
+      <div className="mb-4 flex flex-col gap-2 rounded-md border p-4 sm:flex-row sm:items-end">
+        <div className="grid flex-1 gap-4">
           <Label htmlFor="filter-mode">Filter by</Label>
           <select
             id="filter-mode"

@@ -31,12 +31,10 @@ export function FaceGroupCard({
 
   return (
     <div className="bg-card text-card-foreground flex flex-col rounded-lg border shadow-sm transition-shadow hover:shadow-md">
-      <div className="flex items-center justify-between border-b p-4">
+      <div className="flex items-center justify-between border-b p-2">
         <div>
-          <h2 className="text-lg font-semibold">{label}</h2>
-          <p className="text-muted-foreground text-sm">
-            {faceList.length} image(s)
-          </p>
+          <h2 className="text-muted-foreground text-sm">{label}</h2>
+
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -71,8 +69,8 @@ export function FaceGroupCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="p-4">
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+      <div className="p-2">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {faceList.map((face) => (
             <ImageThumbnail
               key={face.id}
