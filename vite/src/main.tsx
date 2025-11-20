@@ -14,11 +14,11 @@ import { ReportPage } from './report/page'
 import './index.css'
 
 // Wrap public routes to redirect to dashboard if already logged in
-const PublicOnlyRoute = () => {
-  const { user } = useAuth() // You might need to export useAuth from specific file or create wrapper
-  if (user) return <Navigate to="/" replace />
-  return <Outlet />
-}
+// const PublicOnlyRoute = () => {
+//   const { user } = useAuth() // You might need to export useAuth from specific file or create wrapper
+//   if (user) return <Navigate to="/" replace />
+//   return <Outlet />
+// }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

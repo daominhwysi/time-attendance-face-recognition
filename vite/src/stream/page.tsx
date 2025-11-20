@@ -1,7 +1,7 @@
 // src/stream/page.tsx
 
 import { useRef, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+// import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 const VIDEO_WIDTH = 640
 const VIDEO_HEIGHT = 640
