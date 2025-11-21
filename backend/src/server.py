@@ -83,12 +83,14 @@ def login(user: UserCreate, response: Response, db: Session = Depends(get_db)):
         value=access_token,
         httponly=True,
         samesite='none',
+        secure=True
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
         samesite='none',
+        secure=True
     )
     return {"msg": "Login successful"}
 
@@ -110,7 +112,13 @@ def refresh_access_token(
             raise HTTPException(status_code=401, detail="User from token not found")
 
         new_access_token = create_access_token(data={"sub": username})
-        response.set_cookie(key="access_token", value=new_access_token, httponly=True)
+        response.set_cookie(
+            key="access_token",
+            value=new_access_token,
+            httponly=True,
+            samesite='none',
+            secure=True
+        )
         return {"ok": True}
     except HTTPException as e:
         # If verify_token fails (e.g., expired), re-raise its specific error
@@ -124,6 +132,14 @@ def get_current_user(current_user: models.User = Depends(get_current_active_user
 @app.post("/logout")
 def logout(response: Response):
     # Clear both cookies on logout
-    response.delete_cookie(key="access_token")
-    response.delete_cookie(key="refresh_token")
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        samesite='none',
+        secure=True)
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        samesite='none',
+        secure=True)
     return {"msg": "Successfully logged out"}
