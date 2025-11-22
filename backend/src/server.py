@@ -1,34 +1,30 @@
 import os
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from contextlib import asynccontextmanager
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 from src import faces, reports, streaming
-
 from . import models
 from .auth import (
     create_access_token,
-    create_refresh_token,
     get_current_active_user,
     hash_password,
     verify_password,
-    verify_token,
 )
-
-# --- Imports have been updated ---
 from .database import engine, get_db
 from .qdrant_client import setup_qdrant
-from .schemas import UserCreate, UserOut
-from contextlib import asynccontextmanager
+# FIX: Import Token from schemas, not faces
+from .schemas import UserCreate, UserOut, Token
 
-# --- End of updated imports ---
-from dotenv import load_dotenv
 load_dotenv()
 models.Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_qdrant()
+    await setup_qdrant()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -46,6 +42,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 app.include_router(faces.router)
 app.include_router(streaming.router)
 app.include_router(reports.router)
@@ -66,80 +63,27 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
-@app.post("/login")
-def login(user: UserCreate, response: Response, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.username == user.username).first()
-
-    if not db_user or not verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    # Create both access and refresh tokens
-    access_token = create_access_token({"sub": user.username})
-    refresh_token = create_refresh_token({"sub": user.username})
-
-    # Set both tokens in HttpOnly cookies
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        samesite='none',
-        secure=True
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        samesite='none',
-        secure=True
-    )
-    return {"msg": "Login successful"}
-
-@app.post("/refresh-token")
-def refresh_access_token(
-    response: Response,
-    refresh_token: str = Cookie(None),
+# FIX: Updated Login route to use OAuth2PasswordRequestForm and return Token schema
+@app.post("/login", response_model=Token)
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
-    """
-    Validates the refresh token and issues a new access token.
-    """
-    if not refresh_token:
-        raise HTTPException(status_code=401, detail="Refresh token not found")
-    try:
-        username = verify_token(refresh_token)
-        user = db.query(models.User).filter(models.User.username == username).first()
-        if not user:
-            raise HTTPException(status_code=401, detail="User from token not found")
+    # OAuth2PasswordRequestForm puts username in form_data.username
+    db_user = db.query(models.User).filter(models.User.username == form_data.username).first()
 
-        new_access_token = create_access_token(data={"sub": username})
-        response.set_cookie(
-            key="access_token",
-            value=new_access_token,
-            httponly=True,
-            samesite='none',
-            secure=True
-        )
-        return {"ok": True}
-    except HTTPException as e:
-        # If verify_token fails (e.g., expired), re-raise its specific error
-        raise e
+    if not db_user or not verify_password(form_data.password, db_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    access_token = create_access_token(data={"sub": db_user.username})
+
+    # Returns JSON matching the Token schema
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/me", response_model=UserOut)
 def get_current_user(current_user: models.User = Depends(get_current_active_user)):
     return current_user
 
 @app.post("/logout")
-def logout(response: Response):
-    # Clear both cookies on logout
-    response.delete_cookie(
-        key="access_token",
-        httponly=True,
-        samesite='none',
-        secure=True)
-    response.delete_cookie(
-        key="refresh_token",
-        httponly=True,
-        samesite='none',
-        secure=True)
+def logout():
     return {"msg": "Successfully logged out"}
