@@ -4,10 +4,6 @@ import { VideoDisplay } from '@/components/VideoDisplay'
 import { useCamera } from '@/stream/hooks/use-camera'
 import { useStreamProcessor } from '@/stream/hooks/use-stream-processor'
 
-// Define base dimensions
-const BASE_LONG = 640
-const BASE_SHORT = 480
-
 function StreamPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -17,29 +13,26 @@ function StreamPage() {
     'landscape'
   )
 
-  // Calculate current dimensions based on orientation
-  const width = orientation === 'landscape' ? BASE_LONG : BASE_SHORT
-  const height = orientation === 'landscape' ? BASE_SHORT : BASE_LONG
-
-  // 1. Setup Camera
+  // 1. Setup Camera (It now calculates max res internally)
   const {
     isReady: isCameraReady,
     error: cameraError,
     devices,
+    resolution, // <--- This is the ACTUAL Max Res from hardware
   } = useCamera({
     videoRef,
     deviceId: selectedDeviceId || undefined,
-    width,
-    height,
+    orientation,
   })
 
   // 2. Setup Processing
+  // We pass the resolution from the hook to the processor
   const { status, lastDetectionTime, readyState } = useStreamProcessor({
     videoRef,
     canvasRef,
     isCameraReady,
-    width,
-    height,
+    width: resolution.width,
+    height: resolution.height,
   })
 
   const handleDeviceChange = (val: string) => {
@@ -66,11 +59,16 @@ function StreamPage() {
         onToggleOrientation={handleToggleOrientation}
       />
 
+      {/* Display resolution stats for debugging/confirmation */}
+      <div className="mb-2 text-center text-xs text-gray-500">
+        Running at: {resolution.width}x{resolution.height}
+      </div>
+
       <VideoDisplay
         videoRef={videoRef}
         canvasRef={canvasRef}
-        width={width}
-        height={height}
+        width={resolution.width}
+        height={resolution.height}
       />
     </div>
   )
