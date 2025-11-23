@@ -10,3 +10,10 @@ vite/.env
 /backend/src/__pycache__
 /backend/lib/uniface/__pycache__
 /backend/lib/uniface/__pycache__
+vite/localhost-key.pem
+vite/localhost.pem
+backend/run_script
+backend/localhost+2-key.pem
+backend/localhost+2.pem
+vite/vite.config.ts
+vite/vite.config.ts
