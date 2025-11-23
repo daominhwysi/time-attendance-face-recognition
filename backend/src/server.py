@@ -32,6 +32,7 @@ app = FastAPI(lifespan=lifespan)
 cors_origins = os.getenv("CORS_URL")
 if cors_origins:
     allow_origins = cors_origins.split(",")
+    print(allow_origins)
 else:
     allow_origins = ["http://localhost:5173"]
 
