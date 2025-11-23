@@ -13,7 +13,7 @@ function StreamPage() {
     'landscape'
   )
 
-  // 1. Get Max Camera Resolution
+  // 1. Camera (High Res)
   const {
     isReady: isCameraReady,
     error: cameraError,
@@ -25,7 +25,7 @@ function StreamPage() {
     orientation,
   })
 
-  // 2. Process Stream (it will auto-scale down for network)
+  // 2. Processor (Scales down to max 640px)
   const { status, lastDetectionTime, readyState } = useStreamProcessor({
     videoRef,
     canvasRef,
@@ -45,10 +45,11 @@ function StreamPage() {
   const displayStatus =
     cameraError || (isCameraReady ? status : 'Initializing Camera...')
 
-  // Debug Stats
-  const MAX_SEND_WIDTH = 1280
-  const scale =
-    resolution.width > MAX_SEND_WIDTH ? MAX_SEND_WIDTH / resolution.width : 1
+  // Debug Stats Calculation
+  const TARGET_SEND_SIZE = 640
+  const maxDim = Math.max(resolution.width, resolution.height)
+  const scale = maxDim > TARGET_SEND_SIZE ? TARGET_SEND_SIZE / maxDim : 1
+
   const sendW = Math.floor(resolution.width * scale)
   const sendH = Math.floor(resolution.height * scale)
 

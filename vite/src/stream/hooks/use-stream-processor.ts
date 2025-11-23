@@ -5,12 +5,12 @@ interface UseStreamProcessorProps {
   videoRef: RefObject<HTMLVideoElement | null>
   canvasRef: RefObject<HTMLCanvasElement | null>
   isCameraReady: boolean
-  width: number // Display (High) Resolution
-  height: number // Display (High) Resolution
+  width: number
+  height: number
 }
 
-// Cap the bandwidth. 1280px is usually plenty for face recognition.
-const MAX_SEND_WIDTH = 1280
+// CHANGE: Target size is now 640
+const TARGET_SEND_SIZE = 640
 
 export function useStreamProcessor({
   videoRef,
@@ -30,11 +30,12 @@ export function useStreamProcessor({
   const animFrameRef = useRef<number | null>(null)
   const runningRef = useRef(false)
 
-  // Calculate scaling factor.
-  // If Display is 3840 and Max is 1280, scale is 0.33
-  const scaleFactor = width > MAX_SEND_WIDTH ? MAX_SEND_WIDTH / width : 1
+  // CHANGE: Calculate scale based on the LARGEST dimension
+  // This ensures the output fits within a 640x640 box (e.g., 640x480 or 480x640)
+  const maxDimension = Math.max(width, height)
+  const scaleFactor =
+    maxDimension > TARGET_SEND_SIZE ? TARGET_SEND_SIZE / maxDimension : 1
 
-  // 1. WebSocket Management
   useEffect(() => {
     if (!isCameraReady) return
 
@@ -59,7 +60,7 @@ export function useStreamProcessor({
         if (data.results && canvasRef.current) {
           const ctx = canvasRef.current.getContext('2d')
           if (ctx) {
-            // Pass scaleFactor so drawing utility knows how to resize boxes
+            // Pass scaleFactor to draw boxes correctly on the High Res display
             utils.drawDetections(ctx, data.results, width, height, scaleFactor)
           }
         }
@@ -76,19 +77,17 @@ export function useStreamProcessor({
     }
   }, [isCameraReady, canvasRef, width, height, scaleFactor])
 
-  // 2. Processing Loop
   useEffect(() => {
     if (!isCameraReady || !videoRef.current) return
 
     runningRef.current = true
 
-    // Helper canvases for change detection (Hash/MSE)
     const tinyCanvas = utils.createCanvas(utils.HASH_W, utils.HASH_H)
     const tinyCtx = tinyCanvas.getContext('2d')!
     const medCanvas = utils.createCanvas(utils.MEDIUM_W, utils.MEDIUM_H)
     const medCtx = medCanvas.getContext('2d')!
 
-    // The Send Canvas: Sized to the "Low Res" dimensions
+    // CHANGE: Calculate sending dimensions
     const sendW = Math.floor(width * scaleFactor)
     const sendH = Math.floor(height * scaleFactor)
 
@@ -111,7 +110,7 @@ export function useStreamProcessor({
         ws.readyState === WebSocket.OPEN &&
         video.readyState >= 2
       ) {
-        // 1. Change Detection Logic (remains same)
+        // 1. Change Detection (Hash/MSE logic)
         tinyCtx.drawImage(video, 0, 0, utils.HASH_W, utils.HASH_H)
         const currHash = utils.computeDHashBits(
           tinyCtx,
@@ -151,8 +150,7 @@ export function useStreamProcessor({
             prevHashRef.current = currHash
             prevMediumGrayRef.current = currMedGray
 
-            // 2. Draw to the smaller sending canvas
-            // drawImage automatically scales the source (video) to dest (sendW/sendH)
+            // 2. Draw to the small 640px canvas
             sendCtx.drawImage(video, 0, 0, sendW, sendH)
 
             const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.8)
