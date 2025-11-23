@@ -1,7 +1,7 @@
 // frontend/dashboard/page.tsx
 
 import { useEffect, useState } from 'react'
-import { Users, History, Activity, Fingerprint } from 'lucide-react'
+import { Users, History, Activity } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getDashboardStats, type DashboardStats } from '@/api/api'
 
