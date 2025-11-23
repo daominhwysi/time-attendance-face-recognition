@@ -13,20 +13,19 @@ function StreamPage() {
     'landscape'
   )
 
-  // 1. Setup Camera (It now calculates max res internally)
+  // 1. Get Max Camera Resolution
   const {
     isReady: isCameraReady,
     error: cameraError,
     devices,
-    resolution, // <--- This is the ACTUAL Max Res from hardware
+    resolution,
   } = useCamera({
     videoRef,
     deviceId: selectedDeviceId || undefined,
     orientation,
   })
 
-  // 2. Setup Processing
-  // We pass the resolution from the hook to the processor
+  // 2. Process Stream (it will auto-scale down for network)
   const { status, lastDetectionTime, readyState } = useStreamProcessor({
     videoRef,
     canvasRef,
@@ -46,6 +45,13 @@ function StreamPage() {
   const displayStatus =
     cameraError || (isCameraReady ? status : 'Initializing Camera...')
 
+  // Debug Stats
+  const MAX_SEND_WIDTH = 1280
+  const scale =
+    resolution.width > MAX_SEND_WIDTH ? MAX_SEND_WIDTH / resolution.width : 1
+  const sendW = Math.floor(resolution.width * scale)
+  const sendH = Math.floor(resolution.height * scale)
+
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col p-4">
       <StreamHeader
@@ -59,9 +65,13 @@ function StreamPage() {
         onToggleOrientation={handleToggleOrientation}
       />
 
-      {/* Display resolution stats for debugging/confirmation */}
-      <div className="mb-2 text-center text-xs text-gray-500">
-        Running at: {resolution.width}x{resolution.height}
+      <div className="mb-2 flex justify-center gap-4 text-center font-mono text-xs text-gray-500">
+        <span>
+          Display: {resolution.width}x{resolution.height}
+        </span>
+        <span>
+          Network: {sendW}x{sendH} ({(scale * 100).toFixed(0)}%)
+        </span>
       </div>
 
       <VideoDisplay

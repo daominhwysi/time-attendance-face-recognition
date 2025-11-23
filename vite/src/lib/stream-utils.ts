@@ -81,12 +81,21 @@ export function drawDetections(
   ctx: CanvasRenderingContext2D,
   detections: DetectionResult[],
   width: number,
-  height: number
+  height: number,
+  scaleFactor: number = 1 // NEW PARAMETER
 ) {
   ctx.clearRect(0, 0, width, height)
 
   detections.forEach(({ box, label, score }) => {
-    const [x1, y1, x2, y2] = box
+    // The server saw a small image. We need to scale coordinates UP for the big screen.
+    // multiplier = 1 / scaleFactor (e.g., 1 / 0.5 = 2x)
+    const multiplier = 1 / scaleFactor
+
+    const x1 = box[0] * multiplier
+    const y1 = box[1] * multiplier
+    const x2 = box[2] * multiplier
+    const y2 = box[3] * multiplier
+
     const w = x2 - x1
     const h = y2 - y1
 

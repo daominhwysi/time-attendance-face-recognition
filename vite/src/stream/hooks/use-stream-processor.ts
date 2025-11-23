@@ -5,9 +5,12 @@ interface UseStreamProcessorProps {
   videoRef: RefObject<HTMLVideoElement | null>
   canvasRef: RefObject<HTMLCanvasElement | null>
   isCameraReady: boolean
-  width: number // NEW
-  height: number // NEW
+  width: number // Display (High) Resolution
+  height: number // Display (High) Resolution
 }
+
+// Cap the bandwidth. 1280px is usually plenty for face recognition.
+const MAX_SEND_WIDTH = 1280
 
 export function useStreamProcessor({
   videoRef,
@@ -22,11 +25,14 @@ export function useStreamProcessor({
     null
   )
 
-  // ... (Internal refs remain the same)
   const prevHashRef = useRef<Uint8Array | null>(null)
   const prevMediumGrayRef = useRef<Uint8Array | null>(null)
   const animFrameRef = useRef<number | null>(null)
   const runningRef = useRef(false)
+
+  // Calculate scaling factor.
+  // If Display is 3840 and Max is 1280, scale is 0.33
+  const scaleFactor = width > MAX_SEND_WIDTH ? MAX_SEND_WIDTH / width : 1
 
   // 1. WebSocket Management
   useEffect(() => {
@@ -50,11 +56,11 @@ export function useStreamProcessor({
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        // Pass dynamic width/height to draw function
         if (data.results && canvasRef.current) {
           const ctx = canvasRef.current.getContext('2d')
           if (ctx) {
-            utils.drawDetections(ctx, data.results, width, height)
+            // Pass scaleFactor so drawing utility knows how to resize boxes
+            utils.drawDetections(ctx, data.results, width, height, scaleFactor)
           }
         }
       } catch (err) {
@@ -68,7 +74,7 @@ export function useStreamProcessor({
     return () => {
       if (ws.readyState === 1) ws.close()
     }
-  }, [isCameraReady, canvasRef, width, height]) // Re-connect if dimensions change logic could be optimized, but safe for now
+  }, [isCameraReady, canvasRef, width, height, scaleFactor])
 
   // 2. Processing Loop
   useEffect(() => {
@@ -76,15 +82,19 @@ export function useStreamProcessor({
 
     runningRef.current = true
 
+    // Helper canvases for change detection (Hash/MSE)
     const tinyCanvas = utils.createCanvas(utils.HASH_W, utils.HASH_H)
     const tinyCtx = tinyCanvas.getContext('2d')!
     const medCanvas = utils.createCanvas(utils.MEDIUM_W, utils.MEDIUM_H)
     const medCtx = medCanvas.getContext('2d')!
 
-    // Create send canvas with DYNAMIC dimensions
+    // The Send Canvas: Sized to the "Low Res" dimensions
+    const sendW = Math.floor(width * scaleFactor)
+    const sendH = Math.floor(height * scaleFactor)
+
     const sendCanvas = document.createElement('canvas')
-    sendCanvas.width = width
-    sendCanvas.height = height
+    sendCanvas.width = sendW
+    sendCanvas.height = sendH
     const sendCtx = sendCanvas.getContext('2d')!
 
     let lastSend = 0
@@ -101,7 +111,7 @@ export function useStreamProcessor({
         ws.readyState === WebSocket.OPEN &&
         video.readyState >= 2
       ) {
-        // Logic checks (Hash/MSE) remain the same...
+        // 1. Change Detection Logic (remains same)
         tinyCtx.drawImage(video, 0, 0, utils.HASH_W, utils.HASH_H)
         const currHash = utils.computeDHashBits(
           tinyCtx,
@@ -141,8 +151,10 @@ export function useStreamProcessor({
             prevHashRef.current = currHash
             prevMediumGrayRef.current = currMedGray
 
-            // Draw full image using dynamic width/height
-            sendCtx.drawImage(video, 0, 0, width, height)
+            // 2. Draw to the smaller sending canvas
+            // drawImage automatically scales the source (video) to dest (sendW/sendH)
+            sendCtx.drawImage(video, 0, 0, sendW, sendH)
+
             const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.8)
             ws.send(dataUrl)
             setLastDetectionTime(now)
@@ -158,7 +170,7 @@ export function useStreamProcessor({
       runningRef.current = false
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     }
-  }, [isCameraReady, videoRef, width, height]) // Re-init loop if dims change
+  }, [isCameraReady, videoRef, width, height, scaleFactor])
 
   return { status, lastDetectionTime, readyState: wsRef.current?.readyState }
 }
