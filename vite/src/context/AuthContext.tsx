@@ -35,11 +35,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     const checkLoggedIn = async () => {
-      setIsLoading(true)
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        setIsLoading(false)
+        return
+      }
+
       try {
         const response = await api.me()
         setUser(response.data)
       } catch (error) {
+        // Token invalid
+        localStorage.removeItem('access_token')
         setUser(null)
       } finally {
         setIsLoading(false)
@@ -50,9 +57,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const login = async (credentials: api.UserCreate) => {
     try {
-      await api.login(credentials)
-      const response = await api.me()
-      setUser(response.data)
+      const response = await api.login(credentials)
+      // Save the Bearer token
+      localStorage.setItem('access_token', response.data.access_token)
+
+      // Fetch user details immediately
+      const userResponse = await api.me()
+      setUser(userResponse.data)
+
       navigate('/')
     } catch (error) {
       console.error('Login failed:', error)
@@ -76,15 +88,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error) {
       console.error('Logout failed but clearing session locally:', error)
     } finally {
+      localStorage.removeItem('access_token')
       setUser(null)
       navigate('/login')
     }
   }
 
-  // Listen for the global 'logout' event dispatched by the API interceptor
+  // Listen for the global 'logout' event from api interceptor
   useEffect(() => {
     const handleForcedLogout = () => {
-      console.log('Forced logout due to token refresh failure.')
       setUser(null)
       navigate('/login', { replace: true })
     }
@@ -103,7 +115,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       register,
       logout,
     }),
-    [user, isLoading] // Dependencies are correct
+    [user, isLoading]
   )
 
   return (

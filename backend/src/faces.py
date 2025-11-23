@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status, Form, Path, Body, Query
 from pydantic import Field
 from typing import List
-
+import asyncio
 import cv2
 import numpy as np
 from fastapi import (
@@ -19,6 +19,7 @@ from fastapi import (
 )
 from PIL import Image
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from lib.uniface.detection.srcfd import SCRFD
 from lib.uniface.recogition.models import ArcFace
@@ -30,6 +31,7 @@ from src.schemas import BaseModel
 from src.utils import upload_img_to_r2, generate_embedding_for_largest_face, delete_img_from_r2
 from src.database import get_db
 from src.schemas import BaseModel
+from datetime import datetime, timedelta, timezone
 
 # --- UTILITY FUNCTION (Unchanged) ---
 
@@ -100,7 +102,9 @@ async def upload_faces(
             np_image = np.array(image_pil)
             np_bgr_img = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
 
-            embedding_vector, _ = generate_embedding_for_largest_face(np_bgr_img, detector, recognizer)
+            embedding_vector, _ = await asyncio.to_thread(
+                generate_embedding_for_largest_face, np_bgr_img, detector, recognizer
+            )
             if embedding_vector is None:
                 failed_filenames.append(filename)
                 continue
@@ -123,7 +127,7 @@ async def upload_faces(
             failed_filenames.append(filename)
 
     if points_to_upsert:
-        qdrant_client.upsert(collection_name=IMAGE_COLLECTION_NAME, points=points_to_upsert, wait=True)
+        await qdrant_client.upsert(collection_name=IMAGE_COLLECTION_NAME, points=points_to_upsert, wait=True)
         label_counts = {}
         for result in successful_results:
             label_counts[result.label] = label_counts.get(result.label, 0) + 1
@@ -160,7 +164,7 @@ class PaginatedGroupResponse(BaseModel):
 
 # API ENDPOINT MỚI
 @router.get("/my-faces/grouped", response_model=PaginatedGroupResponse)
-def get_my_faces_grouped(
+async def get_my_faces_grouped(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1),
@@ -186,7 +190,7 @@ def get_my_faces_grouped(
 
     # === BƯỚC 2: TRUY VẤN QDRANT ĐỂ LẤY TẤT CẢ ẢNH CỦA CÁC NHÓM ĐÓ ===
     # Sử dụng bộ lọc "should" (OR) để lấy ảnh của nhiều nhóm cùng lúc
-    records, _ = qdrant_client.scroll(
+    records, _ = await qdrant_client.scroll(
         collection_name=IMAGE_COLLECTION_NAME,
         scroll_filter=qdrant_models.Filter(
             must=[
@@ -232,7 +236,7 @@ async def delete_face(
 ):
     qdrant_client = get_qdrant_client()
     """Xóa một bản ghi khuôn mặt. Đảm bảo bản ghi đó thuộc về người dùng."""
-    points = qdrant_client.retrieve(collection_name=IMAGE_COLLECTION_NAME, ids=[point_id])
+    points = await qdrant_client.retrieve(collection_name=IMAGE_COLLECTION_NAME, ids=[point_id])
     if not points:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Face record not found")
 
@@ -255,7 +259,7 @@ async def delete_face(
         await delete_img_from_r2(old_image_url)
 
     # Xóa ảnh khỏi vector db
-    qdrant_client.delete(
+    await qdrant_client.delete(
         collection_name=IMAGE_COLLECTION_NAME,
         points_selector=qdrant_models.PointIdsList(points=[point_id])
     )
@@ -288,7 +292,7 @@ async def rename_face_group(
     new_name = update_data.name.strip()
 
     # --- BƯỚC 1: Lấy thông tin điểm ban đầu và tên cũ ---
-    initial_points = qdrant_client.retrieve(collection_name=IMAGE_COLLECTION_NAME, ids=[point_id], with_payload=True)
+    initial_points = await qdrant_client.retrieve(collection_name=IMAGE_COLLECTION_NAME, ids=[point_id], with_payload=True)
     if not initial_points:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Face record not found")
 
@@ -309,7 +313,7 @@ async def rename_face_group(
         )
 
     # --- BƯỚC 2: Tìm tất cả các điểm trong nhóm cũ ---
-    records, _ = qdrant_client.scroll(
+    records, _ =  await qdrant_client.scroll(
         collection_name=IMAGE_COLLECTION_NAME,
         scroll_filter=qdrant_models.Filter(
             must=[
@@ -332,7 +336,7 @@ async def rename_face_group(
 
 
     # --- BƯỚC 3: Cập nhật tất cả các điểm trong Qdrant ---
-    qdrant_client.set_payload(
+    await qdrant_client.set_payload(
         collection_name=IMAGE_COLLECTION_NAME,
         payload={"name": new_name},
         points=point_ids_to_update,
@@ -390,7 +394,7 @@ async def replace_face_image(
     qdrant_client = get_qdrant_client()
 
     # 1. Truy xuất và xác thực bản ghi hiện có
-    points = qdrant_client.retrieve(collection_name=IMAGE_COLLECTION_NAME, ids=[point_id], with_payload=True)
+    points = await qdrant_client.retrieve(collection_name=IMAGE_COLLECTION_NAME, ids=[point_id], with_payload=True)
     if not points:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Face record not found")
 
@@ -424,7 +428,7 @@ async def replace_face_image(
         updated_payload = point.payload.copy()
         updated_payload["image_url"] = new_image_url
 
-        qdrant_client.upsert(
+        await qdrant_client.upsert(
             collection_name=IMAGE_COLLECTION_NAME,
             points=[
                 qdrant_models.PointStruct(
@@ -480,7 +484,7 @@ async def search_faces(
             ]
         )
 
-        hits = qdrant_client.query_points(
+        hits = await qdrant_client.query_points(
             collection_name=IMAGE_COLLECTION_NAME,
             query=embedding_vector.tolist(),
             query_filter=user_filter,
@@ -493,3 +497,39 @@ async def search_faces(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred during search: {e}")
+
+
+class DashboardStats(BaseModel):
+    total_identities: int
+    total_images: int
+    recent_sightings: int
+
+@router.get("/stats", response_model=DashboardStats)
+def get_dashboard_stats(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns efficient statistics for the dashboard.
+    """
+    # 1. Total Identities (Number of FaceGroups)
+    total_identities = db.query(FaceGroup).filter_by(user_id=current_user.id).count()
+
+    # 2. Total Images (Sum of image_count in FaceGroups)
+    # Handle case where user has no groups (result is None)
+    total_images_result = db.query(func.sum(FaceGroup.image_count)).filter_by(user_id=current_user.id).scalar()
+    total_images = total_images_result if total_images_result else 0
+
+    # 3. Recent Sightings (Groups seen in last 24 hours)
+    twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    recent_sightings = db.query(FaceGroup).filter(
+        FaceGroup.user_id == current_user.id,
+        FaceGroup.last_seen_at >= twenty_four_hours_ago
+    ).count()
+
+    return DashboardStats(
+        total_identities=total_identities,
+        total_images=total_images,
+        recent_sightings=recent_sightings
+    )

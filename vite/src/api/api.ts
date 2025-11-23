@@ -2,7 +2,15 @@ import axios, { AxiosError } from 'axios'
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_BASE_API_URL,
-  withCredentials: true
+})
+
+// --- Add Bearer Token Interceptor ---
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
 })
 
 export interface UserCreate {
@@ -20,71 +28,51 @@ export interface Token {
   token_type: string
 }
 
-// New function to call the refresh endpoint
-const refreshToken = () => apiClient.post('/refresh-token')
+// --- API Calls ---
 
-// Auth API calls
 export const register = (credentials: UserCreate) =>
   apiClient.post<UserOut>('/register', credentials)
 
-export const login = (credentials: UserCreate) =>
-  apiClient.post<{ msg: string }>('/login', credentials)
+export const login = (credentials: UserCreate) => {
+  // FastAPI OAuth2PasswordRequestForm expects form-data
+  const formData = new FormData()
+  formData.append('username', credentials.username)
+  formData.append('password', credentials.password)
+
+  return apiClient.post<Token>('/login', formData)
+}
 
 export const me = () => apiClient.get<UserOut>('/me')
 
-export const logout = () => apiClient.post('/logout')
-
-// --- Axios Interceptor for Token Refresh ---
-let isRefreshing = false
-let failedQueue: {
-  resolve: (value?: unknown) => void
-  reject: (reason?: any) => void
-}[] = []
-
-const processQueue = (error: Error | null, token: string | null = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error)
-    } else {
-      prom.resolve(token)
-    }
-  })
-  failedQueue = []
+export const logout = () => {
+  // Clear token immediately on client
+  localStorage.removeItem('access_token')
+  return apiClient.post('/logout')
 }
 
+// --- Error Handling Interceptor ---
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config as any
-
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      if (originalRequest.url === '/refresh-token') {
-        window.dispatchEvent(new Event('logout'))
-        return Promise.reject(error)
-      }
-
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject })
-        }).then(() => apiClient(originalRequest))
-      }
-
-      originalRequest._retry = true
-      isRefreshing = true
-
-      try {
-        await refreshToken()
-        processQueue(null)
-        return apiClient(originalRequest)
-      } catch (refreshError: any) {
-        processQueue(refreshError)
-        window.dispatchEvent(new Event('logout'))
-        return Promise.reject(refreshError)
-      } finally {
-        isRefreshing = false
-      }
+  (error: AxiosError) => {
+    if (error.response?.status === 401) {
+      // If 401, token is invalid/expired. Clear storage and event logout.
+      localStorage.removeItem('access_token')
+      window.dispatchEvent(new Event('logout'))
     }
-
     return Promise.reject(error)
   }
 )
+
+export interface DashboardStats {
+  total_identities: number
+  total_images: number
+  recent_sightings: number
+}
+
+// ... existing functions ...
+
+// Add this new function
+export const getDashboardStats = async (): Promise<DashboardStats> => {
+  const response = await apiClient.get<DashboardStats>('/images/stats')
+  return response.data
+}

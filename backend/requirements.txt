@@ -14,3 +14,8 @@ pillow
 scikit-image
 SQLAlchemy
 gunicorn
+aiortc
+av
+psycopg2-binary
+alembic
+numpy
