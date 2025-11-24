@@ -3,12 +3,12 @@ import { useAuth } from '@/context/AuthContext'
 import {
   LayoutDashboard,
   Users,
-  Cctv,
   FileText,
   LogOut,
   Menu,
   X,
   UserCircle,
+  Camera,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,7 @@ export default function DashboardLayout() {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Manage Faces', href: '/manage-faces', icon: Users },
-    { name: 'Live Monitor', href: '/stream', icon: Cctv },
+    { name: 'Live Monitor', href: '/stream', icon: Camera },
     { name: 'Reports', href: '/report', icon: FileText },
   ]
 

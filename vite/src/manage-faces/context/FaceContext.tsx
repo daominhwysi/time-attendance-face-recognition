@@ -15,9 +15,9 @@ interface FaceContextType {
   isLoading: boolean
   currentPage: number
   totalPages: number
-  itemsOnPage: number
+  itemsOnCurrentPage: number // <--- 1. NEW VARIABLE
 
-  refresh: (silent?: boolean) => void // Updated signature
+  refresh: (silent?: boolean) => void
   goToPage: (page: number) => void
   uploadFaces: (
     files: File[],
@@ -37,11 +37,12 @@ export function FaceProvider({ children }: { children: ReactNode }) {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
   const pageSize = 12
-  const itemsOnPage = groupedFaces.length
 
-  // Modified fetchData to accept a 'silent' flag
+  // 2. DERIVED STATE: Simply calculate length
+  const itemsOnCurrentPage = groupedFaces.length
+
   const fetchData = useCallback(async (page: number, silent = false) => {
-    if (!silent) setIsLoading(true) // Only show spinner if NOT silent
+    if (!silent) setIsLoading(true)
     try {
       const data = await faceApi.listMyFacesGrouped(page, pageSize)
       setGroupedFaces(data.items)
@@ -54,6 +55,23 @@ export function FaceProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // 3. AUTO-PAGINATION EFFECT
+  // If we delete the last item on a page (items == 0) and we are not on page 1,
+  // automatically go back one page.
+  useEffect(() => {
+    if (!isLoading && itemsOnCurrentPage === 0) {
+      if (currentPage > 1) {
+        // Scenario A: We were on Page 5, now it's empty. Go to Page 4.
+        goToPage(currentPage - 1)
+      } else if (totalPages > 1) {
+        // Scenario B: We are on Page 1, it became empty locally,
+        // BUT there are other pages (totalPages > 1).
+        // The DB has shifted Page 2 items to Page 1. We must fetch them.
+        refresh(true) // Silent refresh to pull items from the "queue"
+      }
+    }
+  }, [itemsOnCurrentPage, isLoading, currentPage])
+
   useEffect(() => {
     fetchData(1)
   }, [fetchData])
@@ -61,38 +79,23 @@ export function FaceProvider({ children }: { children: ReactNode }) {
   const refresh = (silent = false) => fetchData(currentPage, silent)
   const goToPage = (page: number) => fetchData(page)
 
-  // --- Actions ---
-
   const uploadFaces = async (
     files: File[],
     labelOrLabels: string | string[]
   ) => {
     const toastId = toast.loading('Uploading...')
     try {
-      let labels: string[]
-      if (Array.isArray(labelOrLabels)) {
-        labels = labelOrLabels
-      } else {
-        labels = files.map(() => labelOrLabels)
-      }
-
+      let labels: string[] = Array.isArray(labelOrLabels)
+        ? labelOrLabels
+        : files.map(() => labelOrLabels)
       const data = await faceApi.uploadFaces(files, labels)
 
-      // Handle warnings
-      if (data.failed_uploads && data.failed_uploads.length > 0) {
-        const count = data.failed_uploads.length
-        const msg =
-          count === 1
-            ? `No face detected in file: "${data.failed_uploads[0]}"`
-            : `No faces detected in ${count} files`
-        toast.warning('Upload Warning', { description: msg, duration: 5000 })
+      if (data.failed_uploads?.length > 0) {
+        toast.warning(`No faces found in ${data.failed_uploads.length} files`)
       }
 
       if (data.successful_uploads.length > 0) {
-        toast.success(
-          `Successfully uploaded ${data.successful_uploads.length} images`
-        )
-        // SILENT REFRESH: Fetch new data but don't show the spinner
+        toast.success(`Uploaded ${data.successful_uploads.length} images`)
         refresh(true)
       }
     } catch (err) {
@@ -103,31 +106,26 @@ export function FaceProvider({ children }: { children: ReactNode }) {
   }
 
   const deleteImage = async (pointId: string) => {
-    // 1. Optimistic Update (Instant UI change)
     setGroupedFaces((prevGroups) => {
       return prevGroups
         .map((group) => ({
           ...group,
-          // Remove image from the specific group
           images: group.images.filter((img) => img.id !== pointId),
-          // Update count
           image_count: group.images.filter((img) => img.id !== pointId).length,
         }))
-        .filter((group) => group.images.length > 0) // Remove group if empty
+        .filter((group) => group.images.length > 0)
     })
 
     try {
       await faceApi.deleteFace(pointId)
       toast.success('Image deleted')
-      // No refresh needed, state is already correct
     } catch (err) {
       toast.error('Failed to delete image')
-      refresh(true) // Revert state on error
+      refresh(true)
     }
   }
 
   const deleteGroup = async (groupId: number, groupName: string) => {
-    // 1. Optimistic Update
     setGroupedFaces((prev) => prev.filter((g) => g.id !== groupId))
 
     try {
@@ -143,22 +141,15 @@ export function FaceProvider({ children }: { children: ReactNode }) {
     const newName = window.prompt('New name:', oldName)
     if (!newName || newName === oldName) return
 
-    // 1. Optimistic Update
     setGroupedFaces((prev) =>
-      prev.map((group) => {
-        // Find the group containing this point OR matching the name
-        if (group.name === oldName) {
-          return { ...group, name: newName }
-        }
-        return group
-      })
+      prev.map((group) =>
+        group.name === oldName ? { ...group, name: newName } : group
+      )
     )
 
     try {
       await faceApi.renameFaceGroup(pointId, newName)
       toast.success('Renamed successfully')
-      // We do a silent refresh here because renaming might cause
-      // two groups to merge on the backend, which our optimistic logic can't handle perfectly.
       refresh(true)
     } catch (err) {
       toast.error('Rename failed')
@@ -171,7 +162,6 @@ export function FaceProvider({ children }: { children: ReactNode }) {
     try {
       await faceApi.replaceFaceImage(pointId, file)
       toast.success('Image replaced')
-      // Must refresh to get the new Image URL from R2
       refresh(true)
     } catch (err) {
       toast.error('Replace failed')
@@ -187,6 +177,7 @@ export function FaceProvider({ children }: { children: ReactNode }) {
         isLoading,
         currentPage,
         totalPages,
+        itemsOnCurrentPage, // <--- EXPOSED HERE
         refresh,
         goToPage,
         uploadFaces,

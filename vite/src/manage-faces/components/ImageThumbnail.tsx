@@ -50,7 +50,7 @@ export function ImageThumbnail({ face }: { face: FaceRecord }) {
             <img
               src={face.image_url}
               alt={face.name}
-              className="h-full w-full cursor-pointer rounded-md border object-cover hover:opacity-90"
+              className="h-full w-full cursor-pointer rounded-md border object-cover select-none hover:opacity-90"
             />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
