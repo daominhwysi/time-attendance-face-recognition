@@ -6,49 +6,75 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import type { FaceRecord } from '@/api/faceApi'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { useFaces } from '../context/FaceContext'
+import type { FaceRecord } from '@/types'
+import { useRef, useState } from 'react'
 
-export function ImageThumbnail({
-  face,
-  onView,
-  onReplace,
-  onDelete,
-}: {
-  face: FaceRecord
-  onView: (face: FaceRecord) => void
-  onReplace: (pointId: string) => void
-  onDelete: (pointId: string) => void
-}) {
+export function ImageThumbnail({ face }: { face: FaceRecord }) {
+  const { deleteImage, replaceImage } = useFaces()
+  const [isViewOpen, setIsViewOpen] = useState(false)
+  const replaceInputRef = useRef<HTMLInputElement>(null)
+
+  const handleReplace = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      replaceImage(face.id, e.target.files[0])
+    }
+  }
+
   return (
-    <div className="group relative aspect-square">
+    <>
+      {/* This is the ViewImage Modal */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="max-w-4xl border-none bg-transparent p-0 shadow-none">
+          <div className="relative flex h-full w-full items-center justify-center">
+            <img
+              src={face.image_url}
+              alt={face.name}
+              className="max-h-[90vh] w-auto rounded-md object-contain"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="group relative aspect-square">
+        <input
+          type="file"
+          ref={replaceInputRef}
+          className="hidden"
+          onChange={handleReplace}
+        />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-              <img
-                src={face.image_url}
-                alt={face.name}
-                className="h-full w-full rounded-md border object-cover"
-              />
+            <img
+              src={face.image_url}
+              alt={face.name}
+              className="h-full w-full cursor-pointer rounded-md border object-cover hover:opacity-90"
+            />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onView(face)}>
-              <Eye className="mr-1 h-4 w-4" />
-              <span>View</span>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault()
+                setIsViewOpen(true)
+              }}
+            >
+              <Eye className="mr-1 h-4 w-4" /> View Full
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onReplace(face.id)}>
-              <Replace className="mr-1 h-4 w-4" />
-              <span>Replace</span>
+            <DropdownMenuItem onClick={() => replaceInputRef.current?.click()}>
+              <Replace className="mr-1 h-4 w-4" /> Replace
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => onDelete(face.id)}
-              className="text-red-600 focus:text-red-500"
+              onClick={() => deleteImage(face.id)}
+              className="text-destructive"
             >
-              <Trash2 className="mr-1 h-4 w-4" />
-              <span>Delete Image</span>
+              <Trash2 className="mr-1 h-4 w-4" /> Delete Image
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    </>
   )
 }

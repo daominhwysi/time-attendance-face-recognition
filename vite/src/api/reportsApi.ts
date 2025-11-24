@@ -1,16 +1,21 @@
 import { apiClient } from './api'
 
-export interface SightingRecord {
+export interface AttendanceRow {
   name: string
-  last_seen_at: string | null
+  first_seen: string | null
+  last_seen: string | null
+  total_duration_minutes: number | null
+  status: string
 }
 
-export const getSightings = async (filters: {
-  seen_after?: string
-  not_seen_since?: string
-}): Promise<SightingRecord[]> => {
-  const response = await apiClient.get<SightingRecord[]>('/reports/sightings', {
-    params: filters,
-  })
+export const getCustomAttendanceReport = async (start: Date, end: Date) => {
+  const params = {
+    start_time: start.toISOString(),
+    end_time: end.toISOString(),
+  }
+  const response = await apiClient.get<AttendanceRow[]>(
+    '/reports/attendance/custom',
+    { params }
+  )
   return response.data
 }

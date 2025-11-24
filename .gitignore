@@ -18,3 +18,11 @@ backend/localhost+2.pem
 vite/vite.config.ts
 vite/vite.config.ts
 vite/vite.config.ts
+/backend/local_qdrant_storage
+/backend/src/__pycache__
+/backend/src/__pycache__
+/backend/src/api/__pycache__
+/backend/src/core/__pycache__
+/backend/src/db/__pycache__
+/backend/src/services/__pycache__
+/backend/src/schemas/__pycache__

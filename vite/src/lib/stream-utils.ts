@@ -10,12 +10,6 @@ export const HAMMING_THRESHOLD = 5
 export const MSE_CONFIRM_THRESHOLD = 5
 export const MIN_SEND_INTERVAL_MS = 100
 
-export interface DetectionResult {
-  box: [number, number, number, number]
-  label: string
-  score: number
-}
-
 export function createCanvas(w: number, h: number) {
   const c = document.createElement('canvas')
   c.width = w
@@ -76,40 +70,81 @@ export function grayscaleMSE(a: Uint8Array, b: Uint8Array) {
   }
   return Math.sqrt(s / n)
 }
+export interface DetectionResult {
+  box: [number, number, number, number] // [x1, y1, x2, y2]
+  label: string
+  score: number
+}
 
 export function drawDetections(
   ctx: CanvasRenderingContext2D,
   detections: DetectionResult[],
   width: number,
   height: number,
-  scaleFactor: number = 1 // NEW PARAMETER
+  scaleFactor: number = 1,
+  isMirrored: boolean = false // <--- ADD THIS PARAMETER
 ) {
   ctx.clearRect(0, 0, width, height)
 
-  detections.forEach(({ box, label, score }) => {
-    // The server saw a small image. We need to scale coordinates UP for the big screen.
-    // multiplier = 1 / scaleFactor (e.g., 1 / 0.5 = 2x)
-    const multiplier = 1 / scaleFactor
+  // Calculate the multiplier used to scale up from Low Res (Server) to High Res (Screen)
+  const multiplier = 1 / scaleFactor
 
-    const x1 = box[0] * multiplier
-    const y1 = box[1] * multiplier
-    const x2 = box[2] * multiplier
-    const y2 = box[3] * multiplier
+  // Define base sizes (what looks good on a 640px screen)
+  const BASE_LINE_WIDTH = 2
+  const BASE_FONT_SIZE = 16
+  const BASE_PADDING = 5
+
+  // Scale styles dynamically
+  const lineWidth = Math.max(BASE_LINE_WIDTH * multiplier, 2)
+  const fontSize = Math.max(Math.floor(BASE_FONT_SIZE * multiplier), 12)
+  const padding = Math.max(BASE_PADDING * multiplier, 2)
+
+  detections.forEach(({ box, label, score }) => {
+    // 1. Scale Coordinates
+    let x1 = box[0] * multiplier
+    let y1 = box[1] * multiplier
+    let x2 = box[2] * multiplier
+    let y2 = box[3] * multiplier
+
+    // --- NEW LOGIC: FLIP COORDINATES IF MIRRORED ---
+    if (isMirrored) {
+      // Invert X axis relative to the canvas width
+      const originalX1 = x1
+      const originalX2 = x2
+
+      // Swap and invert
+      x1 = width - originalX2
+      x2 = width - originalX1
+    }
+    // ------------------------------------------------
 
     const w = x2 - x1
     const h = y2 - y1
 
+    // 2. Draw Box
     ctx.strokeStyle = 'lime'
-    ctx.lineWidth = 2
+    ctx.lineWidth = lineWidth
     ctx.strokeRect(x1, y1, w, h)
 
-    ctx.fillStyle = 'lime'
+    // 3. Prepare Text
+    ctx.font = `${fontSize}px sans-serif`
     const text = `${label} (${score.toFixed(2)})`
-    const textWidth = ctx.measureText(text).width
-    ctx.fillRect(x1, y1 - 20, textWidth + 10, 20)
+    const textMetrics = ctx.measureText(text)
 
+    const textWidth = textMetrics.width
+    const textHeight = fontSize * 1.2
+
+    // 4. Draw Label Background
+    ctx.fillStyle = 'lime'
+    ctx.fillRect(
+      x1,
+      y1 - textHeight - padding,
+      textWidth + padding * 2,
+      textHeight + padding
+    )
+
+    // 5. Draw Text
     ctx.fillStyle = 'black'
-    ctx.font = '16px sans-serif'
-    ctx.fillText(text, x1 + 5, y1 - 5)
+    ctx.fillText(text, x1 + padding, y1 - padding)
   })
 }

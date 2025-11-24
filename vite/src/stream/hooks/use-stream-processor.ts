@@ -7,6 +7,7 @@ interface UseStreamProcessorProps {
   isCameraReady: boolean
   width: number
   height: number
+  isMirrored: boolean
 }
 
 // CHANGE: Target size is now 640
@@ -18,6 +19,7 @@ export function useStreamProcessor({
   isCameraReady,
   width,
   height,
+  isMirrored,
 }: UseStreamProcessorProps) {
   const wsRef = useRef<WebSocket | null>(null)
   const [status, setStatus] = useState('Initializing...')
@@ -61,7 +63,14 @@ export function useStreamProcessor({
           const ctx = canvasRef.current.getContext('2d')
           if (ctx) {
             // Pass scaleFactor to draw boxes correctly on the High Res display
-            utils.drawDetections(ctx, data.results, width, height, scaleFactor)
+            utils.drawDetections(
+              ctx,
+              data.results,
+              width,
+              height,
+              scaleFactor,
+              isMirrored
+            )
           }
         }
       } catch (err) {
@@ -75,7 +84,7 @@ export function useStreamProcessor({
     return () => {
       if (ws.readyState === 1) ws.close()
     }
-  }, [isCameraReady, canvasRef, width, height, scaleFactor])
+  }, [isCameraReady, canvasRef, width, height, scaleFactor, isMirrored])
 
   useEffect(() => {
     if (!isCameraReady || !videoRef.current) return
