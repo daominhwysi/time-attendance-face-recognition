@@ -10,7 +10,9 @@ interface UseStreamProcessorProps {
   isMirrored: boolean
 }
 
-// CHANGE: Target size is now 640
+// 1. LIMIT FPS: 15 FPS is plenty for detection.
+const PROCESSING_FPS = 5
+const MIN_TIME_BETWEEN_FRAMES = 1000 / PROCESSING_FPS
 const TARGET_SEND_SIZE = 640
 
 export function useStreamProcessor({
@@ -31,9 +33,8 @@ export function useStreamProcessor({
   const prevMediumGrayRef = useRef<Uint8Array | null>(null)
   const animFrameRef = useRef<number | null>(null)
   const runningRef = useRef(false)
+  const lastStateUpdateRef = useRef<number>(0)
 
-  // CHANGE: Calculate scale based on the LARGEST dimension
-  // This ensures the output fits within a 640x640 box (e.g., 640x480 or 480x640)
   const maxDimension = Math.max(width, height)
   const scaleFactor =
     maxDimension > TARGET_SEND_SIZE ? TARGET_SEND_SIZE / maxDimension : 1
@@ -59,13 +60,21 @@ export function useStreamProcessor({
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        if (data.results && canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d')
+        // --- THE FIX FOR STUCK BOXES ---
+        // Your backend returns [] when no faces are found.
+        // We defaults to [] if data.results is null/undefined.
+        const detections = data.results || []
+        if (canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d', {
+            willReadFrequently: false,
+          })
           if (ctx) {
-            // Pass scaleFactor to draw boxes correctly on the High Res display
+            // We ALWAYS call this.
+            // If detections is [], drawDetections will just run ctx.clearRect()
+            // and loop 0 times, effectively erasing the screen.
             utils.drawDetections(
               ctx,
-              data.results,
+              detections,
               width,
               height,
               scaleFactor,
@@ -92,23 +101,34 @@ export function useStreamProcessor({
     runningRef.current = true
 
     const tinyCanvas = utils.createCanvas(utils.HASH_W, utils.HASH_H)
-    const tinyCtx = tinyCanvas.getContext('2d')!
-    const medCanvas = utils.createCanvas(utils.MEDIUM_W, utils.MEDIUM_H)
-    const medCtx = medCanvas.getContext('2d')!
+    const tinyCtx = tinyCanvas.getContext('2d', { willReadFrequently: true })!
 
-    // CHANGE: Calculate sending dimensions
+    const medCanvas = utils.createCanvas(utils.MEDIUM_W, utils.MEDIUM_H)
+    const medCtx = medCanvas.getContext('2d', { willReadFrequently: true })!
+
     const sendW = Math.floor(width * scaleFactor)
     const sendH = Math.floor(height * scaleFactor)
 
     const sendCanvas = document.createElement('canvas')
     sendCanvas.width = sendW
     sendCanvas.height = sendH
-    const sendCtx = sendCanvas.getContext('2d')!
+    const sendCtx = sendCanvas.getContext('2d', { willReadFrequently: false })!
 
     let lastSend = 0
+    let lastLoopTime = 0
 
     const loop = () => {
       if (!runningRef.current) return
+
+      const now = Date.now()
+      const elapsed = now - lastLoopTime
+
+      // 1. Throttle CPU (FPS Limit)
+      if (elapsed < MIN_TIME_BETWEEN_FRAMES) {
+        animFrameRef.current = requestAnimationFrame(loop)
+        return
+      }
+      lastLoopTime = now - (elapsed % MIN_TIME_BETWEEN_FRAMES)
 
       const video = videoRef.current
       const ws = wsRef.current
@@ -119,7 +139,14 @@ export function useStreamProcessor({
         ws.readyState === WebSocket.OPEN &&
         video.readyState >= 2
       ) {
-        // 1. Change Detection (Hash/MSE logic)
+        // 2. Prevent Request Queuing (Backpressure)
+        // If bufferedAmount > 0, the previous frame is still uploading.
+        // We drop this frame to prevent lag accumulation on iPhone.
+        if (ws.bufferedAmount > 0) {
+          animFrameRef.current = requestAnimationFrame(loop)
+          return
+        }
+
         tinyCtx.drawImage(video, 0, 0, utils.HASH_W, utils.HASH_H)
         const currHash = utils.computeDHashBits(
           tinyCtx,
@@ -150,7 +177,6 @@ export function useStreamProcessor({
             if (mse >= utils.MSE_CONFIRM_THRESHOLD) isSignificantChange = true
           }
 
-          const now = Date.now()
           if (
             isSignificantChange &&
             now - lastSend > utils.MIN_SEND_INTERVAL_MS
@@ -159,12 +185,16 @@ export function useStreamProcessor({
             prevHashRef.current = currHash
             prevMediumGrayRef.current = currMedGray
 
-            // 2. Draw to the small 640px canvas
             sendCtx.drawImage(video, 0, 0, sendW, sendH)
 
-            const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.8)
+            // Lower quality to 0.6 for speed
+            const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.6)
             ws.send(dataUrl)
-            setLastDetectionTime(now)
+
+            if (now - lastStateUpdateRef.current > 1000) {
+              setLastDetectionTime(now)
+              lastStateUpdateRef.current = now
+            }
           }
         }
       }

@@ -31,10 +31,8 @@ async def process_frame(frame_bytes: bytes, current_user: User, db: Session):
     # Face Detection
     # We use asyncio.to_thread because detection is CPU blocking
     faces = await asyncio.to_thread(ml_models.detector.detect, np_img)
-
-    if not faces:
+    if not len(faces) >= 1:
         return []
-
     results = []
     qdrant = get_qdrant_client()
 
@@ -56,7 +54,7 @@ async def process_frame(frame_bytes: bytes, current_user: User, db: Session):
             score_threshold=0.4
         )
 
-        label = "Unknown"
+        label = "unknown"
         score = 0.0
 
         if hits.points:
@@ -88,8 +86,7 @@ async def websocket_endpoint(websocket: WebSocket, current_user: User = Depends(
             data = await websocket.receive_text()
             # Run processing
             results = await process_frame(data, current_user, db)
-            if results:
-                await websocket.send_json({"results": results})
+            await websocket.send_json({"results": results})
     except WebSocketDisconnect:
         print(f"Disconnected: {current_user.username}")
     finally:

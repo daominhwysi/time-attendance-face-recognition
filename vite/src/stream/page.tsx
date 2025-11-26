@@ -1,3 +1,5 @@
+// stream/page.tsx
+
 import { useRef, useState, useEffect } from 'react'
 import { StreamHeader } from '@/components/StreamHeader'
 import { VideoDisplay } from '@/components/VideoDisplay'
@@ -10,15 +12,12 @@ function StreamPage() {
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('')
 
-  // Default to what the browser currently is
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>(
     window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
   )
 
-  // Default Mirror to TRUE for front cameras (Standard behavior)
   const [isMirrored, setIsMirrored] = useState(true)
 
-  // --- AUTOMATIC ORIENTATION DETECTION ---
   useEffect(() => {
     const handleResize = () => {
       const newOrientation =
@@ -29,9 +28,8 @@ function StreamPage() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
-  // ----------------------------------------
 
-  // 1. Camera (High Res)
+  // 1. Camera
   const {
     isReady: isCameraReady,
     error: cameraError,
@@ -41,9 +39,12 @@ function StreamPage() {
     videoRef,
     deviceId: selectedDeviceId || undefined,
     orientation,
+    // ADDED: Cap resolution to 720p (1280x720).
+    // This reduces CPU load significantly compared to 4K.
+    maxResolution: 1280,
   })
 
-  // 2. Processor (Scales down to 640px for server)
+  // 2. Processor
   const { status, lastDetectionTime, readyState } = useStreamProcessor({
     videoRef,
     canvasRef,
@@ -60,7 +61,7 @@ function StreamPage() {
   const displayStatus =
     cameraError || (isCameraReady ? status : 'Initializing Camera...')
 
-  // Debug Stats
+  // Debug Stats calculation...
   const TARGET_SEND_SIZE = 640
   const maxDim = Math.max(resolution.width, resolution.height)
   const scale = maxDim > TARGET_SEND_SIZE ? TARGET_SEND_SIZE / maxDim : 1
@@ -82,7 +83,11 @@ function StreamPage() {
 
       <div className="mb-2 flex justify-center gap-4 text-center font-mono text-xs text-gray-500">
         <span>{orientation.toUpperCase()}</span>
-        <span>
+        <span
+          className={
+            resolution.width > 1280 ? 'text-red-500' : 'text-green-600'
+          }
+        >
           Cam: {resolution.width}x{resolution.height}
         </span>
         <span>

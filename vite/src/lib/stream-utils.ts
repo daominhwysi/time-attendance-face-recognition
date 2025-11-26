@@ -79,72 +79,71 @@ export interface DetectionResult {
 export function drawDetections(
   ctx: CanvasRenderingContext2D,
   detections: DetectionResult[],
-  width: number,
-  height: number,
-  scaleFactor: number = 1,
-  isMirrored: boolean = false // <--- ADD THIS PARAMETER
+  viewWidth: number,
+  viewHeight: number,
+  scaleFactor: number,
+  isMirrored: boolean
 ) {
-  ctx.clearRect(0, 0, width, height)
+  // 1. Clear the canvas
+  ctx.clearRect(0, 0, viewWidth, viewHeight)
 
-  // Calculate the multiplier used to scale up from Low Res (Server) to High Res (Screen)
-  const multiplier = 1 / scaleFactor
+  // --- NEW: DYNAMIC SIZING LOGIC ---
+  // We use a reference width (e.g., 640px) to determine how much larger/smaller
+  // the current view is.
+  const referenceWidth = 640
+  const visualRatio = Math.max(0.5, viewWidth / referenceWidth) // Prevent it from getting too small
 
-  // Define base sizes (what looks good on a 640px screen)
-  const BASE_LINE_WIDTH = 2
-  const BASE_FONT_SIZE = 16
-  const BASE_PADDING = 5
+  // Calculate sizes based on the ratio
+  const lineWidth = Math.max(2, 3 * visualRatio) // Min 2px, Base 3px
+  const fontSize = Math.floor(Math.max(12, 16 * visualRatio)) // Min 12px, Base 16px
+  const fontPadding = Math.floor(4 * visualRatio)
 
-  // Scale styles dynamically
-  const lineWidth = Math.max(BASE_LINE_WIDTH * multiplier, 2)
-  const fontSize = Math.max(Math.floor(BASE_FONT_SIZE * multiplier), 12)
-  const padding = Math.max(BASE_PADDING * multiplier, 2)
+  // Set global styles that don't change per box
+  ctx.lineWidth = lineWidth
+  ctx.font = `bold ${fontSize}px Courier New`
 
-  detections.forEach(({ box, label, score }) => {
-    // 1. Scale Coordinates
-    let x1 = box[0] * multiplier
-    let y1 = box[1] * multiplier
-    let x2 = box[2] * multiplier
-    let y2 = box[3] * multiplier
+  detections.forEach((det) => {
+    const { box, label, score } = det
 
-    // --- NEW LOGIC: FLIP COORDINATES IF MIRRORED ---
+    // 2. Scale coordinates back up to Viewport size
+    let [x1, y1, x2, y2] = box.map((c) => c / scaleFactor)
+
+    // 3. Handle Mirroring
     if (isMirrored) {
-      // Invert X axis relative to the canvas width
-      const originalX1 = x1
-      const originalX2 = x2
-
-      // Swap and invert
-      x1 = width - originalX2
-      x2 = width - originalX1
+      const tempX1 = x1
+      x1 = viewWidth - x2
+      x2 = viewWidth - tempX1
     }
-    // ------------------------------------------------
 
-    const w = x2 - x1
-    const h = y2 - y1
+    const width = x2 - x1
+    const height = y2 - y1
 
-    // 2. Draw Box
-    ctx.strokeStyle = 'lime'
-    ctx.lineWidth = lineWidth
-    ctx.strokeRect(x1, y1, w, h)
+    // Color Logic
+    const isUnknown = label.toLowerCase() === 'unknown'
+    const color = isUnknown ? '#ff0000' : '#00ff00'
+    const textColor = isUnknown ? '#ffffff' : '#000000'
 
-    // 3. Prepare Text
-    ctx.font = `${fontSize}px sans-serif`
-    const text = `${label} (${score.toFixed(2)})`
+    // 4. Draw Bounding Box (Use dynamic line width)
+    ctx.strokeStyle = color
+    ctx.strokeRect(x1, y1, width, height)
+
+    // 5. Draw Label Background
+    const text = `${label} (${(score * 100).toFixed(0)}%)`
     const textMetrics = ctx.measureText(text)
 
-    const textWidth = textMetrics.width
-    const textHeight = fontSize * 1.2
+    // Calculate dynamic text height based on font size + padding
+    const textHeight = fontSize + fontPadding * 2
 
-    // 4. Draw Label Background
-    ctx.fillStyle = 'lime'
-    ctx.fillRect(
-      x1,
-      y1 - textHeight - padding,
-      textWidth + padding * 2,
-      textHeight + padding
-    )
+    // Check if label fits above the box, otherwise put it inside/below
+    const textY = y1 - textHeight < 0 ? y1 : y1 - textHeight
 
-    // 5. Draw Text
-    ctx.fillStyle = 'black'
-    ctx.fillText(text, x1 + padding, y1 - padding)
+    ctx.fillStyle = color
+    ctx.fillRect(x1, textY, textMetrics.width + fontPadding * 2, textHeight)
+
+    // 6. Draw Label Text
+    ctx.fillStyle = textColor
+    // Center text vertically within the filled rect
+    // (x + padding, y + padding + approx baseline adjustment)
+    ctx.fillText(text, x1 + fontPadding, textY + fontSize + fontPadding / 2)
   })
 }
