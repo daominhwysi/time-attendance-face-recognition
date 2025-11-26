@@ -1,43 +1,42 @@
-// frontend/dashboard/page.tsx
+// // frontend/dashboard/page.tsx
 
-import { useEffect, useState } from 'react'
-import { Users, History, Activity } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { getDashboardStats, type DashboardStats } from '@/api/api'
+// import { useEffect, useState } from 'react'
+// import { Users, History, Activity } from 'lucide-react'
+// import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+// import { getDashboardStats, type DashboardStats } from '@/api/api'
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats>({
-    total_identities: 0,
-    total_images: 0,
-    recent_sightings: 0,
-  })
-  const [loading, setLoading] = useState(true)
+  // const [stats, setStats] = useState<DashboardStats>({
+  //   total_identities: 0,
+  //   total_images: 0,
+  //   recent_sightings: 0,
+  // })
+  // const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const loadStats = async () => {
-      try {
-        const data = await getDashboardStats()
-        setStats(data)
-      } catch (e) {
-        console.error('Failed to load dashboard stats', e)
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadStats()
-  }, [])
+  // useEffect(() => {
+  //   const loadStats = async () => {
+  //     try {
+  //       const data = await getDashboardStats()
+  //       setStats(data)
+  //     } catch (e) {
+  //       console.error('Failed to load dashboard stats', e)
+  //     } finally {
+  //       setLoading(false)
+  //     }
+  //   }
+  //   loadStats()
+  // }, [])
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
+        {/* <p className="text-muted-foreground">
           Overview of system performance and surveillance metrics.
-        </p>
+        </p> */}
       </div>
-
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Database Size</CardTitle>
@@ -84,7 +83,7 @@ export default function DashboardPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
+      </div> */}
     </div>
   )
 }

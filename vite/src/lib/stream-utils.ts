@@ -10,12 +10,6 @@ export const HAMMING_THRESHOLD = 5
 export const MSE_CONFIRM_THRESHOLD = 5
 export const MIN_SEND_INTERVAL_MS = 100
 
-export interface DetectionResult {
-  box: [number, number, number, number]
-  label: string
-  score: number
-}
-
 export function createCanvas(w: number, h: number) {
   const c = document.createElement('canvas')
   c.width = w
@@ -76,40 +70,80 @@ export function grayscaleMSE(a: Uint8Array, b: Uint8Array) {
   }
   return Math.sqrt(s / n)
 }
+export interface DetectionResult {
+  box: [number, number, number, number] // [x1, y1, x2, y2]
+  label: string
+  score: number
+}
 
 export function drawDetections(
   ctx: CanvasRenderingContext2D,
   detections: DetectionResult[],
-  width: number,
-  height: number,
-  scaleFactor: number = 1 // NEW PARAMETER
+  viewWidth: number,
+  viewHeight: number,
+  scaleFactor: number,
+  isMirrored: boolean
 ) {
-  ctx.clearRect(0, 0, width, height)
+  // 1. Clear the canvas
+  ctx.clearRect(0, 0, viewWidth, viewHeight)
 
-  detections.forEach(({ box, label, score }) => {
-    // The server saw a small image. We need to scale coordinates UP for the big screen.
-    // multiplier = 1 / scaleFactor (e.g., 1 / 0.5 = 2x)
-    const multiplier = 1 / scaleFactor
+  // --- NEW: DYNAMIC SIZING LOGIC ---
+  // We use a reference width (e.g., 640px) to determine how much larger/smaller
+  // the current view is.
+  const referenceWidth = 640
+  const visualRatio = Math.max(0.5, viewWidth / referenceWidth) // Prevent it from getting too small
 
-    const x1 = box[0] * multiplier
-    const y1 = box[1] * multiplier
-    const x2 = box[2] * multiplier
-    const y2 = box[3] * multiplier
+  // Calculate sizes based on the ratio
+  const lineWidth = Math.max(2, 3 * visualRatio) // Min 2px, Base 3px
+  const fontSize = Math.floor(Math.max(12, 16 * visualRatio)) // Min 12px, Base 16px
+  const fontPadding = Math.floor(4 * visualRatio)
 
-    const w = x2 - x1
-    const h = y2 - y1
+  // Set global styles that don't change per box
+  ctx.lineWidth = lineWidth
+  ctx.font = `bold ${fontSize}px Courier New`
 
-    ctx.strokeStyle = 'lime'
-    ctx.lineWidth = 2
-    ctx.strokeRect(x1, y1, w, h)
+  detections.forEach((det) => {
+    const { box, label, score } = det
 
-    ctx.fillStyle = 'lime'
-    const text = `${label} (${score.toFixed(2)})`
-    const textWidth = ctx.measureText(text).width
-    ctx.fillRect(x1, y1 - 20, textWidth + 10, 20)
+    // 2. Scale coordinates back up to Viewport size
+    let [x1, y1, x2, y2] = box.map((c) => c / scaleFactor)
 
-    ctx.fillStyle = 'black'
-    ctx.font = '16px sans-serif'
-    ctx.fillText(text, x1 + 5, y1 - 5)
+    // 3. Handle Mirroring
+    if (isMirrored) {
+      const tempX1 = x1
+      x1 = viewWidth - x2
+      x2 = viewWidth - tempX1
+    }
+
+    const width = x2 - x1
+    const height = y2 - y1
+
+    // Color Logic
+    const isUnknown = label.toLowerCase() === 'unknown'
+    const color = isUnknown ? '#ff0000' : '#00ff00'
+    const textColor = isUnknown ? '#ffffff' : '#000000'
+
+    // 4. Draw Bounding Box (Use dynamic line width)
+    ctx.strokeStyle = color
+    ctx.strokeRect(x1, y1, width, height)
+
+    // 5. Draw Label Background
+    const text = `${label} (${(score * 100).toFixed(0)}%)`
+    const textMetrics = ctx.measureText(text)
+
+    // Calculate dynamic text height based on font size + padding
+    const textHeight = fontSize + fontPadding * 2
+
+    // Check if label fits above the box, otherwise put it inside/below
+    const textY = y1 - textHeight < 0 ? y1 : y1 - textHeight
+
+    ctx.fillStyle = color
+    ctx.fillRect(x1, textY, textMetrics.width + fontPadding * 2, textHeight)
+
+    // 6. Draw Label Text
+    ctx.fillStyle = textColor
+    // Center text vertically within the filled rect
+    // (x + padding, y + padding + approx baseline adjustment)
+    ctx.fillText(text, x1 + fontPadding, textY + fontSize + fontPadding / 2)
   })
 }

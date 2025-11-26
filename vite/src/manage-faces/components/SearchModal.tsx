@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import * as facesApi from '@/api/faceApi'
-import type { SearchResult } from '@/api/faceApi'
+import { type SearchResult } from '@/types'
 import { Search as SearchIcon, FileImage, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {

@@ -8,7 +8,7 @@ class UserOut(BaseModel):
     id: int
     username: str
     class Config:
-        orm_mode = True
+        from_attributes = True # Pydantic v2
 
 class Token(BaseModel):
     access_token: str

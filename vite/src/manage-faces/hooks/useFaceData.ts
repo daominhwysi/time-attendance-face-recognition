@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import * as facesApi from '@/api/faceApi'
-import type { GroupedFace } from '@/api/faceApi'
+import { type GroupedFace } from '@/types'
 
 // No longer need to group on the client, the API does it for us
 // type GroupedFaces = Record<string, FaceRecord[]>; // REMOVE THIS

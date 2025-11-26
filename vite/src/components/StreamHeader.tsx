@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { RotateCw } from 'lucide-react'
+import { FlipHorizontal } from 'lucide-react'
 
 interface StreamHeaderProps {
   status: string
@@ -15,19 +15,20 @@ interface StreamHeaderProps {
   lastDetectionTime: number | null
   devices: MediaDeviceInfo[]
   selectedDeviceId: string
-  orientation: 'landscape' | 'portrait'
+  isMirrored: boolean // NEW
   onDeviceChange: (id: string) => void
-  onToggleOrientation: () => void
+  onToggleMirror: () => void // NEW
 }
 
 export function StreamHeader({
   status,
   isSocketConnected,
+  lastDetectionTime,
   devices,
   selectedDeviceId,
-  orientation,
+  isMirrored,
   onDeviceChange,
-  onToggleOrientation,
+  onToggleMirror,
 }: StreamHeaderProps) {
   return (
     <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -38,37 +39,37 @@ export function StreamHeader({
             {status}
           </Badge>
           <span className="font-mono text-xs">
-            {orientation === 'landscape'
-              ? 'Horizontal (4:3)'
-              : 'Vertical (3:4)'}
+            Last:{' '}
+            {lastDetectionTime
+              ? new Date(lastDetectionTime).toLocaleTimeString()
+              : '--:--:--'}
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
         <Select value={selectedDeviceId} onValueChange={onDeviceChange}>
-          <SelectTrigger className="w-[200px]">
+          <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Select Camera" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="auto">Default Camera</SelectItem>
             {devices.map((device) => (
               <SelectItem key={device.deviceId} value={device.deviceId}>
-                {device.label || `Camera ${device.deviceId.slice(0, 5)}...`}
+                {device.label || `Camera ${device.deviceId.slice(0, 4)}...`}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
+        {/* Mirror Button (Fixes Upside down/backwards issues) */}
         <Button
-          variant="outline"
+          variant={isMirrored ? 'default' : 'outline'}
           size="icon"
-          onClick={onToggleOrientation}
-          title="Switch Orientation (Landscape/Portrait)"
+          onClick={onToggleMirror}
+          title="Mirror Video"
         >
-          <RotateCw
-            className={`h-4 w-4 transition-transform ${orientation === 'portrait' ? 'rotate-90' : ''}`}
-          />
+          <FlipHorizontal className="h-4 w-4" />
         </Button>
       </div>
     </div>

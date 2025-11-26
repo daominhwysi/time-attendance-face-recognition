@@ -1,12 +1,20 @@
+// stream/hooks/use-camera.ts
+
 import { useEffect, useState, useCallback, type RefObject } from 'react'
 
 interface UseCameraProps {
   videoRef: RefObject<HTMLVideoElement | null>
   deviceId?: string
   orientation: 'landscape' | 'portrait'
+  maxResolution?: number // NEW: Allow capping resolution
 }
 
-export function useCamera({ videoRef, deviceId, orientation }: UseCameraProps) {
+export function useCamera({
+  videoRef,
+  deviceId,
+  orientation,
+  maxResolution = 1280, // Default to 720p (Standard HD)
+}: UseCameraProps) {
   const [error, setError] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
@@ -45,12 +53,12 @@ export function useCamera({ videoRef, deviceId, orientation }: UseCameraProps) {
             ? 1.333333 // 4:3
             : 0.75 // 3:4
 
-        // 2. Ask for "Max" resolution with that aspect ratio
-        // "ideal: 4096" tells browser to go as high as hardware allows
+        // 2. Ask for resolution based on limit
         const constraints: MediaStreamConstraints = {
           video: {
-            width: { ideal: 4096 },
-            height: { ideal: 4096 },
+            // CHANGED: Use the maxResolution limit instead of 4096
+            width: { ideal: maxResolution },
+            height: { ideal: maxResolution },
             aspectRatio: { ideal: aspectRatio },
             ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
           },
@@ -100,7 +108,7 @@ export function useCamera({ videoRef, deviceId, orientation }: UseCameraProps) {
         stream.getTracks().forEach((track) => track.stop())
       }
     }
-  }, [videoRef, deviceId, orientation, fetchDevices])
+  }, [videoRef, deviceId, orientation, fetchDevices, maxResolution]) // Added maxResolution dependency
 
   return { isReady, error, devices, resolution }
 }
