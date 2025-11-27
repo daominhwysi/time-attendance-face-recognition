@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { FlipHorizontal } from 'lucide-react'
+import { FlipHorizontal, Maximize, Minimize } from 'lucide-react' // Added Icons
 
 interface StreamHeaderProps {
   status: string
@@ -15,9 +15,11 @@ interface StreamHeaderProps {
   lastDetectionTime: number | null
   devices: MediaDeviceInfo[]
   selectedDeviceId: string
-  isMirrored: boolean // NEW
+  isMirrored: boolean
+  isFullScreen: boolean // NEW
   onDeviceChange: (id: string) => void
-  onToggleMirror: () => void // NEW
+  onToggleMirror: () => void
+  onToggleFullScreen: () => void // NEW
 }
 
 export function StreamHeader({
@@ -27,8 +29,10 @@ export function StreamHeader({
   devices,
   selectedDeviceId,
   isMirrored,
+  isFullScreen,
   onDeviceChange,
   onToggleMirror,
+  onToggleFullScreen,
 }: StreamHeaderProps) {
   return (
     <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -62,7 +66,6 @@ export function StreamHeader({
           </SelectContent>
         </Select>
 
-        {/* Mirror Button (Fixes Upside down/backwards issues) */}
         <Button
           variant={isMirrored ? 'default' : 'outline'}
           size="icon"
@@ -70,6 +73,20 @@ export function StreamHeader({
           title="Mirror Video"
         >
           <FlipHorizontal className="h-4 w-4" />
+        </Button>
+
+        {/* Full Screen Button */}
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={onToggleFullScreen}
+          title={isFullScreen ? 'Exit Full Screen' : 'Enter Full Screen'}
+        >
+          {isFullScreen ? (
+            <Minimize className="h-4 w-4" />
+          ) : (
+            <Maximize className="h-4 w-4" />
+          )}
         </Button>
       </div>
     </div>

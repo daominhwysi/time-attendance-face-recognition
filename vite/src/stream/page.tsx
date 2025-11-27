@@ -1,6 +1,4 @@
-// stream/page.tsx
-
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { StreamHeader } from '@/components/StreamHeader'
 import { VideoDisplay } from '@/components/VideoDisplay'
 import { useCamera } from '@/stream/hooks/use-camera'
@@ -10,13 +8,18 @@ function StreamPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
+  // NEW: Ref for the specific DIV we want to make full screen
+  const containerRef = useRef<HTMLDivElement>(null)
+
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('')
+  const [isMirrored, setIsMirrored] = useState(true)
+
+  // NEW: State to track fullscreen status
+  const [isFullScreen, setIsFullScreen] = useState(false)
 
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>(
     window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
   )
-
-  const [isMirrored, setIsMirrored] = useState(true)
 
   useEffect(() => {
     const handleResize = () => {
@@ -29,7 +32,35 @@ function StreamPage() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // 1. Camera
+  // --- NEW: Full Screen Logic ---
+  const toggleFullScreen = useCallback(async () => {
+    if (!containerRef.current) return
+
+    if (!document.fullscreenElement) {
+      try {
+        await containerRef.current.requestFullscreen()
+      } catch (err) {
+        console.error('Error attempting to enable fullscreen:', err)
+      }
+    } else {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen()
+      }
+    }
+  }, [])
+
+  // Sync state with browser events (e.g. User presses ESC)
+  useEffect(() => {
+    const handleFullScreenChange = () => {
+      setIsFullScreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullScreenChange)
+    return () =>
+      document.removeEventListener('fullscreenchange', handleFullScreenChange)
+  }, [])
+  // -----------------------------
+
   const {
     isReady: isCameraReady,
     error: cameraError,
@@ -39,12 +70,9 @@ function StreamPage() {
     videoRef,
     deviceId: selectedDeviceId || undefined,
     orientation,
-    // ADDED: Cap resolution to 720p (1280x720).
-    // This reduces CPU load significantly compared to 4K.
     maxResolution: 1280,
   })
 
-  // 2. Processor
   const { status, lastDetectionTime, readyState } = useStreamProcessor({
     videoRef,
     canvasRef,
@@ -61,7 +89,7 @@ function StreamPage() {
   const displayStatus =
     cameraError || (isCameraReady ? status : 'Initializing Camera...')
 
-  // Debug Stats calculation...
+  // Calculate debug stats
   const TARGET_SEND_SIZE = 640
   const maxDim = Math.max(resolution.width, resolution.height)
   const scale = maxDim > TARGET_SEND_SIZE ? TARGET_SEND_SIZE / maxDim : 1
@@ -77,8 +105,10 @@ function StreamPage() {
         devices={devices}
         selectedDeviceId={selectedDeviceId || 'auto'}
         isMirrored={isMirrored}
+        isFullScreen={isFullScreen} // Pass state
         onDeviceChange={handleDeviceChange}
         onToggleMirror={() => setIsMirrored((prev) => !prev)}
+        onToggleFullScreen={toggleFullScreen} // Pass handler
       />
 
       <div className="mb-2 flex justify-center gap-4 text-center font-mono text-xs text-gray-500">
@@ -98,9 +128,12 @@ function StreamPage() {
       <VideoDisplay
         videoRef={videoRef}
         canvasRef={canvasRef}
+        containerRef={containerRef} // Pass ref
         width={resolution.width}
         height={resolution.height}
         isMirrored={isMirrored}
+        isFullScreen={isFullScreen} // Pass state for styling
+        onToggleFullScreen={toggleFullScreen} // Pass handler for double-click
       />
     </div>
   )

@@ -10,10 +10,11 @@ interface UseStreamProcessorProps {
   isMirrored: boolean
 }
 
-// 1. LIMIT FPS: 15 FPS is plenty for detection.
+// 1. LIMIT FPS: 5 FPS is enough for detection
 const PROCESSING_FPS = 5
 const MIN_TIME_BETWEEN_FRAMES = 1000 / PROCESSING_FPS
 const TARGET_SEND_SIZE = 640
+const TIMEOUT_MS = 2000 // 2 seconds timeout
 
 export function useStreamProcessor({
   videoRef,
@@ -35,10 +36,15 @@ export function useStreamProcessor({
   const runningRef = useRef(false)
   const lastStateUpdateRef = useRef<number>(0)
 
+  // --- NEW: Flow Control Refs ---
+  const isPendingServerResponse = useRef(false) // Flag: Are we waiting for server?
+  const lastSendTimeRef = useRef<number>(0) // Timestamp: When did we last send?
+
   const maxDimension = Math.max(width, height)
   const scaleFactor =
     maxDimension > TARGET_SEND_SIZE ? TARGET_SEND_SIZE / maxDimension : 1
 
+  // 1. WebSocket Connection Setup
   useEffect(() => {
     if (!isCameraReady) return
 
@@ -55,23 +61,24 @@ export function useStreamProcessor({
     const ws = new WebSocket(`${wsUrl}/stream/ws?token=${token}`)
     wsRef.current = ws
 
-    ws.onopen = () => setStatus('Connected.')
+    ws.onopen = () => {
+      setStatus('Connected.')
+      isPendingServerResponse.current = false
+    }
 
     ws.onmessage = (event) => {
+      // --- CRITICAL: Server responded, unlock flow ---
+      isPendingServerResponse.current = false
+
       try {
         const data = JSON.parse(event.data)
-        // --- THE FIX FOR STUCK BOXES ---
-        // Your backend returns [] when no faces are found.
-        // We defaults to [] if data.results is null/undefined.
         const detections = data.results || []
+
         if (canvasRef.current) {
           const ctx = canvasRef.current.getContext('2d', {
             willReadFrequently: false,
           })
           if (ctx) {
-            // We ALWAYS call this.
-            // If detections is [], drawDetections will just run ctx.clearRect()
-            // and loop 0 times, effectively erasing the screen.
             utils.drawDetections(
               ctx,
               detections,
@@ -87,14 +94,17 @@ export function useStreamProcessor({
       }
     }
 
-    ws.onclose = (e) =>
+    ws.onclose = (e) => {
       setStatus(e.code === 1008 ? 'Session Expired' : 'Disconnected')
+      isPendingServerResponse.current = false
+    }
 
     return () => {
       if (ws.readyState === 1) ws.close()
     }
   }, [isCameraReady, canvasRef, width, height, scaleFactor, isMirrored])
 
+  // 2. Processing Loop
   useEffect(() => {
     if (!isCameraReady || !videoRef.current) return
 
@@ -123,7 +133,7 @@ export function useStreamProcessor({
       const now = Date.now()
       const elapsed = now - lastLoopTime
 
-      // 1. Throttle CPU (FPS Limit)
+      // A. Throttle CPU (FPS Limit)
       if (elapsed < MIN_TIME_BETWEEN_FRAMES) {
         animFrameRef.current = requestAnimationFrame(loop)
         return
@@ -139,14 +149,26 @@ export function useStreamProcessor({
         ws.readyState === WebSocket.OPEN &&
         video.readyState >= 2
       ) {
-        // 2. Prevent Request Queuing (Backpressure)
-        // If bufferedAmount > 0, the previous frame is still uploading.
-        // We drop this frame to prevent lag accumulation on iPhone.
+        // --- B. APPLICATION FLOW CONTROL (STOP-AND-WAIT) ---
+        if (isPendingServerResponse.current) {
+          // Check Timeout (Fail-safe)
+          if (now - lastSendTimeRef.current > TIMEOUT_MS) {
+            console.warn('⚠️ Server response timeout. Forcing reset.')
+            isPendingServerResponse.current = false // Force unlock
+          } else {
+            // Still waiting within allowed time -> Skip this frame
+            animFrameRef.current = requestAnimationFrame(loop)
+            return
+          }
+        }
+
+        // --- C. NETWORK LAYER BACKPRESSURE CHECK ---
         if (ws.bufferedAmount > 0) {
           animFrameRef.current = requestAnimationFrame(loop)
           return
         }
 
+        // --- D. MOTION DETECTION ---
         tinyCtx.drawImage(video, 0, 0, utils.HASH_W, utils.HASH_H)
         const currHash = utils.computeDHashBits(
           tinyCtx,
@@ -177,18 +199,23 @@ export function useStreamProcessor({
             if (mse >= utils.MSE_CONFIRM_THRESHOLD) isSignificantChange = true
           }
 
+          // --- E. SEND DATA ---
           if (
             isSignificantChange &&
             now - lastSend > utils.MIN_SEND_INTERVAL_MS
           ) {
             lastSend = now
+
+            // Lock the flow
+            isPendingServerResponse.current = true
+            lastSendTimeRef.current = now
+
             prevHashRef.current = currHash
             prevMediumGrayRef.current = currMedGray
 
             sendCtx.drawImage(video, 0, 0, sendW, sendH)
+            const dataUrl = sendCanvas.toDataURL('image/webp', 0.7)
 
-            // Lower quality to 0.6 for speed
-            const dataUrl = sendCanvas.toDataURL('image/jpeg', 0.6)
             ws.send(dataUrl)
 
             if (now - lastStateUpdateRef.current > 1000) {

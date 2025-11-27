@@ -1,26 +1,28 @@
 // stream/hooks/use-camera.ts
 
-import { useEffect, useState, useCallback, type RefObject } from 'react'
+import { useEffect, useState, useCallback, type RefObject, useRef } from 'react'
 
 interface UseCameraProps {
   videoRef: RefObject<HTMLVideoElement | null>
   deviceId?: string
   orientation: 'landscape' | 'portrait'
-  maxResolution?: number // NEW: Allow capping resolution
+  maxResolution?: number
 }
 
 export function useCamera({
   videoRef,
   deviceId,
   orientation,
-  maxResolution = 1280, // Default to 720p (Standard HD)
+  maxResolution = 1280,
 }: UseCameraProps) {
   const [error, setError] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
-
-  // Store the ACTUAL resolution the camera decides to give us
   const [resolution, setResolution] = useState({ width: 640, height: 480 })
+
+  // Trigger to force re-initialization
+  const [retryTrigger, setRetryTrigger] = useState(0)
+  const retryTimeoutRef = useRef<any | null>(null)
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -32,6 +34,25 @@ export function useCamera({
     }
   }, [])
 
+  // 1. Listen for hardware changes (USB unplugged/plugged)
+  useEffect(() => {
+    const handleDeviceChange = () => {
+      console.log('Hardware change detected. Refreshing...')
+      fetchDevices()
+      // Force camera restart
+      setRetryTrigger((prev) => prev + 1)
+    }
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange)
+    return () => {
+      navigator.mediaDevices.removeEventListener(
+        'devicechange',
+        handleDeviceChange
+      )
+    }
+  }, [fetchDevices])
+
+  // 2. Main Setup Logic
   useEffect(() => {
     let isMounted = true
     let stream: MediaStream | null = null
@@ -41,22 +62,16 @@ export function useCamera({
       setError(null)
 
       try {
-        // Stop previous
+        // Cleanup previous stream
         if (videoRef.current && videoRef.current.srcObject) {
           const oldStream = videoRef.current.srcObject as MediaStream
           oldStream.getTracks().forEach((t) => t.stop())
         }
 
-        // 1. Determine Aspect Ratio
-        const aspectRatio =
-          orientation === 'landscape'
-            ? 1.333333 // 4:3
-            : 0.75 // 3:4
+        const aspectRatio = orientation === 'landscape' ? 1.333333 : 0.75
 
-        // 2. Ask for resolution based on limit
         const constraints: MediaStreamConstraints = {
           video: {
-            // CHANGED: Use the maxResolution limit instead of 4096
             width: { ideal: maxResolution },
             height: { ideal: maxResolution },
             aspectRatio: { ideal: aspectRatio },
@@ -73,28 +88,38 @@ export function useCamera({
 
         fetchDevices()
 
+        // --- Watch for stream death (Browser stops it or privacy switch) ---
+        stream.getVideoTracks()[0].onended = () => {
+          console.warn('Video track ended unexpectedly. Restarting...')
+          if (isMounted) setRetryTrigger((prev) => prev + 1)
+        }
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream
 
-          // 3. Wait for video to load metadata to get REAL dimensions
           videoRef.current.onloadedmetadata = () => {
             if (!videoRef.current) return
-
-            // Read what the hardware actually provided
             const w = videoRef.current.videoWidth
             const h = videoRef.current.videoHeight
-
             console.log(`Camera started at: ${w}x${h}`)
             setResolution({ width: w, height: h })
 
-            videoRef.current.play().catch((e) => console.error(e))
-            setIsReady(true)
+            videoRef.current
+              .play()
+              .then(() => setIsReady(true))
+              .catch((e) => console.error('Play error:', e))
           }
         }
       } catch (err) {
         if (isMounted) {
-          setError('Could not access camera. Please grant permission.')
-          console.error(err)
+          console.error('Camera Error:', err)
+          setError('Could not access camera. Retrying in 3s...')
+
+          // Auto Retry logic for Camera (e.g., if camera is busy being freed)
+          if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
+          retryTimeoutRef.current = setTimeout(() => {
+            setRetryTrigger((prev) => prev + 1)
+          }, 3000)
         }
       }
     }
@@ -104,11 +129,19 @@ export function useCamera({
     return () => {
       isMounted = false
       setIsReady(false)
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
       if (stream) {
         stream.getTracks().forEach((track) => track.stop())
       }
     }
-  }, [videoRef, deviceId, orientation, fetchDevices, maxResolution]) // Added maxResolution dependency
+  }, [
+    videoRef,
+    deviceId,
+    orientation,
+    fetchDevices,
+    maxResolution,
+    retryTrigger,
+  ])
 
   return { isReady, error, devices, resolution }
 }
