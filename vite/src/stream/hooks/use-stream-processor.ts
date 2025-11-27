@@ -10,11 +10,9 @@ interface UseStreamProcessorProps {
   isMirrored: boolean
 }
 
-// 1. LIMIT FPS: 5 FPS is enough for detection
-const PROCESSING_FPS = 5
+const PROCESSING_FPS = 10 // Tăng nhẹ lên vì đã có flow control lo việc nghẽn mạng
 const MIN_TIME_BETWEEN_FRAMES = 1000 / PROCESSING_FPS
 const TARGET_SEND_SIZE = 640
-const TIMEOUT_MS = 2000 // 2 seconds timeout
 
 export function useStreamProcessor({
   videoRef,
@@ -30,15 +28,14 @@ export function useStreamProcessor({
     null
   )
 
+  // --- FLOW CONTROL STATE ---
+  const isProcessingRef = useRef(false) // Cờ quan trọng nhất: Server có đang bận không?
+
   const prevHashRef = useRef<Uint8Array | null>(null)
   const prevMediumGrayRef = useRef<Uint8Array | null>(null)
   const animFrameRef = useRef<number | null>(null)
   const runningRef = useRef(false)
   const lastStateUpdateRef = useRef<number>(0)
-
-  // --- NEW: Flow Control Refs ---
-  const isPendingServerResponse = useRef(false) // Flag: Are we waiting for server?
-  const lastSendTimeRef = useRef<number>(0) // Timestamp: When did we last send?
 
   const maxDimension = Math.max(width, height)
   const scaleFactor =
@@ -63,12 +60,13 @@ export function useStreamProcessor({
 
     ws.onopen = () => {
       setStatus('Connected.')
-      isPendingServerResponse.current = false
+      isProcessingRef.current = false // Reset trạng thái khi mới kết nối
     }
 
     ws.onmessage = (event) => {
-      // --- CRITICAL: Server responded, unlock flow ---
-      isPendingServerResponse.current = false
+      // --- UNLOCK HERE ---
+      // Khi nhận được kết quả, nghĩa là server đã xử lý xong frame trước
+      isProcessingRef.current = false
 
       try {
         const data = JSON.parse(event.data)
@@ -96,7 +94,11 @@ export function useStreamProcessor({
 
     ws.onclose = (e) => {
       setStatus(e.code === 1008 ? 'Session Expired' : 'Disconnected')
-      isPendingServerResponse.current = false
+      isProcessingRef.current = false // Reset phòng trường hợp connect lại
+    }
+
+    ws.onerror = () => {
+      isProcessingRef.current = false // Mở khóa nếu lỗi mạng để thử lại
     }
 
     return () => {
@@ -110,6 +112,7 @@ export function useStreamProcessor({
 
     runningRef.current = true
 
+    // Khởi tạo các canvas phụ trợ (off-screen canvas)
     const tinyCanvas = utils.createCanvas(utils.HASH_W, utils.HASH_H)
     const tinyCtx = tinyCanvas.getContext('2d', { willReadFrequently: true })!
 
@@ -118,11 +121,14 @@ export function useStreamProcessor({
 
     const sendW = Math.floor(width * scaleFactor)
     const sendH = Math.floor(height * scaleFactor)
-
     const sendCanvas = document.createElement('canvas')
     sendCanvas.width = sendW
     sendCanvas.height = sendH
-    const sendCtx = sendCanvas.getContext('2d', { willReadFrequently: false })!
+    const sendCtx = sendCanvas.getContext('2d', {
+      willReadFrequently: false,
+      alpha: false,
+    })!
+    sendCtx.imageSmoothingEnabled = false
 
     let lastSend = 0
     let lastLoopTime = 0
@@ -130,10 +136,9 @@ export function useStreamProcessor({
     const loop = () => {
       if (!runningRef.current) return
 
+      // A. Throttle FPS (Client side FPS limit)
       const now = Date.now()
       const elapsed = now - lastLoopTime
-
-      // A. Throttle CPU (FPS Limit)
       if (elapsed < MIN_TIME_BETWEEN_FRAMES) {
         animFrameRef.current = requestAnimationFrame(loop)
         return
@@ -143,88 +148,94 @@ export function useStreamProcessor({
       const video = videoRef.current
       const ws = wsRef.current
 
+      // B. Kiểm tra điều kiện cơ bản
       if (
-        video &&
-        ws &&
-        ws.readyState === WebSocket.OPEN &&
-        video.readyState >= 2
+        !video ||
+        !ws ||
+        ws.readyState !== WebSocket.OPEN ||
+        video.readyState < 2
       ) {
-        // --- B. APPLICATION FLOW CONTROL (STOP-AND-WAIT) ---
-        if (isPendingServerResponse.current) {
-          // Check Timeout (Fail-safe)
-          if (now - lastSendTimeRef.current > TIMEOUT_MS) {
-            console.warn('⚠️ Server response timeout. Forcing reset.')
-            isPendingServerResponse.current = false // Force unlock
-          } else {
-            // Still waiting within allowed time -> Skip this frame
-            animFrameRef.current = requestAnimationFrame(loop)
-            return
-          }
-        }
+        animFrameRef.current = requestAnimationFrame(loop)
+        return
+      }
 
-        // --- C. NETWORK LAYER BACKPRESSURE CHECK ---
-        if (ws.bufferedAmount > 0) {
-          animFrameRef.current = requestAnimationFrame(loop)
-          return
-        }
+      // --- C. FLOW CONTROL CHECK ---
+      // Nếu Server đang bận xử lý frame cũ, ta bỏ qua frame này luôn (Drop Frame)
+      // Không cần tính toán Motion Detection làm gì cho tốn CPU
+      if (isProcessingRef.current) {
+        animFrameRef.current = requestAnimationFrame(loop)
+        return
+      }
 
-        // --- D. MOTION DETECTION ---
-        tinyCtx.drawImage(video, 0, 0, utils.HASH_W, utils.HASH_H)
-        const currHash = utils.computeDHashBits(
-          tinyCtx,
-          utils.HASH_W,
-          utils.HASH_H
+      // --- D. Motion Detection Logic ---
+      // (Chỉ chạy khi server đang rảnh)
+      tinyCtx.drawImage(video, 0, 0, utils.HASH_W, utils.HASH_H)
+      const currHash = utils.computeDHashBits(
+        tinyCtx,
+        utils.HASH_W,
+        utils.HASH_H
+      )
+
+      const lastSentHash = prevHashRef.current
+      const hamDiff = lastSentHash
+        ? utils.hammingDistance(lastSentHash, currHash)
+        : Infinity
+
+      let isSignificantChange = false
+
+      // Logic check hash và MSE như cũ
+      if (!lastSentHash || hamDiff >= utils.HAMMING_THRESHOLD) {
+        medCtx.drawImage(video, 0, 0, utils.MEDIUM_W, utils.MEDIUM_H)
+        const currMedGray = utils.getGrayscaleArrayFromCtx(
+          medCtx,
+          utils.MEDIUM_W,
+          utils.MEDIUM_H
         )
 
-        const lastSentHash = prevHashRef.current
-        const hamDiff = lastSentHash
-          ? utils.hammingDistance(lastSentHash, currHash)
-          : Infinity
+        const lastSentMedGray = prevMediumGrayRef.current
+        if (!lastSentMedGray) {
+          isSignificantChange = true
+        } else {
+          const mse = utils.grayscaleMSE(lastSentMedGray, currMedGray)
+          if (mse >= utils.MSE_CONFIRM_THRESHOLD) isSignificantChange = true
+        }
 
-        let isSignificantChange = false
+        if (
+          isSignificantChange &&
+          now - lastSend > utils.MIN_SEND_INTERVAL_MS
+        ) {
+          // --- E. SEND DATA ---
 
-        if (!lastSentHash || hamDiff >= utils.HAMMING_THRESHOLD) {
-          medCtx.drawImage(video, 0, 0, utils.MEDIUM_W, utils.MEDIUM_H)
-          const currMedGray = utils.getGrayscaleArrayFromCtx(
-            medCtx,
-            utils.MEDIUM_W,
-            utils.MEDIUM_H
+          // LOCK NGAY LẬP TỨC: Đánh dấu là đang gửi và chờ server
+          isProcessingRef.current = true
+
+          lastSend = now
+          prevHashRef.current = currHash
+          prevMediumGrayRef.current = currMedGray
+
+          sendCtx.drawImage(video, 0, 0, sendW, sendH)
+
+          sendCanvas.toBlob(
+            (blob) => {
+              // Double check socket trước khi gửi
+              if (blob && ws.readyState === WebSocket.OPEN) {
+                ws.send(blob)
+              } else {
+                // Nếu tạo blob xong mà mạng đứt -> Phải mở khóa để thử lại lần sau
+                isProcessingRef.current = false
+              }
+            },
+            'image/jpeg',
+            0.7
           )
 
-          const lastSentMedGray = prevMediumGrayRef.current
-          if (!lastSentMedGray) {
-            isSignificantChange = true
-          } else {
-            const mse = utils.grayscaleMSE(lastSentMedGray, currMedGray)
-            if (mse >= utils.MSE_CONFIRM_THRESHOLD) isSignificantChange = true
-          }
-
-          // --- E. SEND DATA ---
-          if (
-            isSignificantChange &&
-            now - lastSend > utils.MIN_SEND_INTERVAL_MS
-          ) {
-            lastSend = now
-
-            // Lock the flow
-            isPendingServerResponse.current = true
-            lastSendTimeRef.current = now
-
-            prevHashRef.current = currHash
-            prevMediumGrayRef.current = currMedGray
-
-            sendCtx.drawImage(video, 0, 0, sendW, sendH)
-            const dataUrl = sendCanvas.toDataURL('image/webp', 0.7)
-
-            ws.send(dataUrl)
-
-            if (now - lastStateUpdateRef.current > 1000) {
-              setLastDetectionTime(now)
-              lastStateUpdateRef.current = now
-            }
+          if (now - lastStateUpdateRef.current > 1000) {
+            setLastDetectionTime(now)
+            lastStateUpdateRef.current = now
           }
         }
       }
+
       animFrameRef.current = requestAnimationFrame(loop)
     }
 

@@ -24,7 +24,7 @@ function StreamPage() {
   useEffect(() => {
     const handleResize = () => {
       const newOrientation =
-        window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
+      window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
       setOrientation(newOrientation)
     }
 

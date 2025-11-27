@@ -1,11 +1,7 @@
 import asyncio
-import base64
-import io
 import cv2
 import numpy as np
-from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from PIL import Image
 from sqlalchemy.orm import Session
 
 from src.core.ml_models import ml_models
@@ -18,27 +14,22 @@ from src.services.sighting_worker import sighting_worker
 
 router = APIRouter(prefix="/stream", tags=["streaming"])
 
-
-# --- Logic Helper (Giữ nguyên logic xử lý ảnh) ---
-async def process_frame(frame_bytes: str, current_user: User, db: Session):
-    # 1. Decode
+# --- Logic Helper ---
+# Changed input type from str to bytes
+async def process_frame(frame_bytes: bytes, current_user: User, db: Session):
     try:
-        # Cắt header "data:image/webp;base64," nếu có
-        if "," in frame_bytes:
-            frame_bytes = frame_bytes.split(",")[1]
-
-        image_data = base64.b64decode(frame_bytes)
-        # Dùng cv2.imdecode nhanh hơn PIL một chút trong trường hợp này
-        nparr = np.frombuffer(image_data, np.uint8)
+        # 1. Decode directly from bytes (No Base64 step needed)
+        # Convert raw bytes to numpy array
+        nparr = np.frombuffer(frame_bytes, np.uint8)
+        # Decode image
         np_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
         if np_img is None:
             return []
     except Exception:
         return []
 
-    # 2. Face Detection
-    # Quan trọng: asyncio.to_thread đẩy việc nặng sang Thread khác
-    # giúp Event Loop không bị chặn, để hàm receive_loop bên dưới vẫn chạy được.
+    # 2. Detect Faces
     faces = await asyncio.to_thread(ml_models.detector.detect, np_img)
 
     if not faces or len(faces) == 0:
@@ -79,7 +70,6 @@ async def process_frame(frame_bytes: str, current_user: User, db: Session):
             score = best.score
 
             if score > 0.4:
-                # Đẩy việc ghi DB sang worker background để không block luồng xử lý ảnh
                 await sighting_worker.push_sighting(current_user.id, label)
 
         results.append(
@@ -96,67 +86,53 @@ async def websocket_endpoint(
     await websocket.accept()
     db = next(get_db())
 
-    # --- STATE MANAGEMENT ---
-    # Biến shared state để lưu trữ frame mới nhất
     state = {
-        "latest_frame": None,  # Chỉ lưu frame cuối cùng nhận được
-        "is_active": True,  # Cờ kiểm soát vòng lặp
-        "evt": asyncio.Event(),  # Cờ báo hiệu có dữ liệu mới
+        "latest_frame": None, # Will now hold bytes
+        "is_active": True,
+        "evt": asyncio.Event(),
     }
 
-    # --- TASK 1: READER (Tiêu thụ dữ liệu mạng cực nhanh) ---
+    # --- TASK 1: READER ---
     async def receive_loop():
         try:
             while state["is_active"]:
-                # Hàm này block cho đến khi nhận được data từ client
-                data = await websocket.receive_text()
+                # CHANGED: receive_bytes instead of receive_text
+                data = await websocket.receive_bytes()
 
-                # UPDATE: Ghi đè frame cũ ngay lập tức
                 state["latest_frame"] = data
-
-                # Báo hiệu cho Processor
                 state["evt"].set()
         except (WebSocketDisconnect, Exception):
             state["is_active"] = False
-            state["evt"].set()  # Đánh thức processor để nó thoát vòng lặp
+            state["evt"].set()
 
-    # --- TASK 2: PROCESSOR (Chạy AI - tốn thời gian) ---
+    # --- TASK 2: PROCESSOR ---
     async def process_loop():
         while state["is_active"]:
-            # Chờ cho đến khi Reader báo hiệu có ảnh mới
             await state["evt"].wait()
             state["evt"].clear()
 
-            # Lấy frame ra
             frame_data = state["latest_frame"]
 
-            # Nếu Reader chết hoặc không có dữ liệu, skip
             if not frame_data or not state["is_active"]:
                 break
 
             try:
-                # Xử lý frame (Trong lúc hàm này chạy 100ms, Reader vẫn đang nhận frame mới và ghi đè)
+                # frame_data is now bytes
                 results = await process_frame(frame_data, current_user, db)
 
-                # Chỉ gửi kết quả nếu kết nối còn sống
                 if state["is_active"]:
                     await websocket.send_json({"results": results})
             except Exception as e:
                 print(f"Error processing frame: {e}")
-                # Không break ở đây để tránh crash luồng nếu 1 ảnh bị lỗi
 
-    # --- MAIN EXECUTION ---
     try:
-        # Chạy 2 task song song
         reader_task = asyncio.create_task(receive_loop())
         processor_task = asyncio.create_task(process_loop())
 
-        # Chờ 1 trong 2 task kết thúc (thường là Reader kết thúc do client disconnect)
         done, pending = await asyncio.wait(
             [reader_task, processor_task], return_when=asyncio.FIRST_COMPLETED
         )
 
-        # Dọn dẹp task còn lại
         for task in pending:
             task.cancel()
 
